@@ -44,6 +44,9 @@ def render_clip(
     subtitle_dir: Path | None = None,
     ffmpeg_binary: str = "ffmpeg",
 ) -> list[RenderResult]:
+    if not manifest.approved:
+        return []
+
     if not _ffmpeg_available(ffmpeg_binary):
         raise FFmpegRenderError(
             f"{ffmpeg_binary!r} not found on PATH; install FFmpeg to render"

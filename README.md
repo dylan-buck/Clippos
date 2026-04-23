@@ -76,12 +76,12 @@ Minimal job file:
 - `review` — consumes an existing `scoring-request.json` plus a matching
   `scoring-response.json` (or cached scores) and writes `review-manifest.json`.
 - `render` — consumes `review-manifest.json`, builds per-clip `RenderManifest`
-  plans, and shells out to FFmpeg to produce 9:16 / 1:1 / 16:9 MP4s with ASS
-  caption sidecars. Emits `render-report.json`.
+  plans for candidates marked `"approved": true`, and shells out to FFmpeg to
+  produce 9:16 / 1:1 / 16:9 MP4s with ASS caption sidecars. Emits
+  `render-report.json`; exits with an error when no candidates are approved.
 - `auto` — runs `mine`, and if the harness has already written the response
   file, continues into `review` in the same invocation. `auto` does not chain
-  into render; the render stage must be invoked explicitly (M1.6 will add a
-  human approval gate).
+  into render; the render stage must be invoked explicitly after approval.
 
 All workspace artifacts land under `/absolute/path/output/jobs/<job_id>/`:
 
@@ -112,6 +112,10 @@ an LLM API directly and does not use any provider SDK or API key.
    `claude_write_scoring_response` (or the `codex_*`/`hermes_*` equivalents).
 3. Run `python -m clipper.cli run job.json --stage review` (or rerun `auto`)
    to merge scores into `review-manifest.json`.
+4. Review `review-manifest.json` and set `"approved": true` on the candidates
+   to export.
+5. Run `python -m clipper.cli run job.json --stage render` to produce final
+   MP4s for approved candidates only.
 
 See [docs/architecture/scoring-handoff.md](docs/architecture/scoring-handoff.md) for the full rubric, schema, and caching rules.
 
@@ -128,4 +132,4 @@ See [docs/architecture/scoring-handoff.md](docs/architecture/scoring-handoff.md)
   static per clip — driven by OneEuro-smoothed face anchors — and captions are
   rendered via the ASS subtitle filter.
 - `auto` does not run the render stage; invoke `--stage render` explicitly to
-  produce final MP4s (the M1.6 approval loop will gate this automatically).
+  produce final MP4s after marking candidates approved in `review-manifest.json`.

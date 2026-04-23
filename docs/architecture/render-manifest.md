@@ -7,7 +7,8 @@
 A `RenderManifest` contains:
 
 - `clip_id` — matches the candidate identifier carried from mining through review.
-- `approved` — boolean gate; renders are skipped when false (M1.6 will wire in human approval; today the stage is driven explicitly by `--stage render`).
+- `approved` — boolean gate; renders are skipped when false. The orchestrator
+  builds render manifests only for review candidates marked `approved: true`.
 - `source_video` — absolute `Path` to the original media the clip was cut from.
 - `start_seconds` / `end_seconds` — clip window, in source-timeline seconds. Validated to be strictly increasing.
 - `outputs` — `dict[AspectRatio, Path]` mapping each rendered ratio to its MP4 output path.
@@ -86,5 +87,5 @@ ASS subtitle sidecars are written next to the MP4 by default (overridable via `s
 ## Not yet covered
 
 - Animated crop interpolation (kept off for M1.5 quality-vs-simplicity tradeoff; the OneEuro anchors are already stored so we can switch later).
-- Retake / regeneration semantics (will land with the M1.6 approval loop).
+- Retake / regeneration semantics.
 - Upload / publishing metadata.

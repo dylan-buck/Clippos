@@ -26,13 +26,14 @@ The CLI currently validates a JSON job payload with this contract before invokin
 - `review` — load the existing scoring request plus a matching
   `scoring-response.json` (or per-clip cache) and write `review-manifest.json`.
 - `render` — load `review-manifest.json`, re-derive transcript / vision
-  timelines, build a per-clip `RenderManifest`, shell out to FFmpeg to produce
-  9:16 / 1:1 / 16:9 MP4s with ASS caption sidecars, and emit
-  `render-report.json`.
+  timelines, build a per-clip `RenderManifest` for candidates marked
+  `approved: true`, shell out to FFmpeg to produce 9:16 / 1:1 / 16:9 MP4s with
+  ASS caption sidecars, and emit `render-report.json`. The stage exits with a
+  `RenderStageError` when no candidates are approved.
 - `auto` (default) — run `mine`, then continue into `review` when scores are
   already resolved; otherwise stop after emitting the request. `auto` does not
-  chain into render — the render stage must be invoked explicitly so a human
-  approval step can gate it (M1.6 will formalize the gate).
+  chain into render — the render stage must be invoked explicitly after the
+  review manifest has been approved.
 
 Workspace artifacts all live under `<output_dir>/jobs/<job_id>/`:
 `scoring-request.json`, `scoring-response.json`, `scoring-cache/*.json`,
@@ -48,6 +49,8 @@ Workspace artifacts all live under `<output_dir>/jobs/<job_id>/`:
 - `CandidateClip.start_seconds` and `CandidateClip.end_seconds` must be non-negative
 - `CandidateClip.end_seconds` must be greater than `start_seconds`
 - `CandidateClip.score` is bounded to `0.0` through `1.0`
+- `CandidateClip.approved` defaults to `false`; render exports only approved
+  candidates
 - Aspect ratios are restricted to the shared vocabulary: `9:16`, `1:1`, `16:9`
 
 ## Example

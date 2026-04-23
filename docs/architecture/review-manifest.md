@@ -8,6 +8,12 @@
 - `video_path`: source video file used to derive candidate clips.
 - `candidates`: ordered list of `CandidateClip` records prepared for review.
 
+Each `CandidateClip` includes `approved`, which defaults to `false` when the
+review manifest is generated. A human reviewer or harness should set
+`approved: true` on the clips selected for export. The render stage ignores
+unapproved candidates and raises a render-stage error when no candidates are
+approved.
+
 ## Candidate enrichment
 
 The review pipeline builds the manifest with `build_review_manifest(...)`. It accepts the raw candidate list plus the harness scoring output normalized by `scores_to_model_payload(...)`:
@@ -26,6 +32,7 @@ Candidates are enriched by `clip_id`:
 
 - `title`, `hook`, and `reasons` fall back to the original candidate values when the harness does not return an override.
 - `score` is replaced by `final_score` when present, so the manifest ordering reflects the harness judgment rather than the mining score.
+- `approved` remains `false` unless a reviewer or harness explicitly changes it.
 - Unmatched model score entries are ignored.
 - Enriched candidates are sorted by `(-score, clip_id)` so the strongest clips surface first with a deterministic tiebreaker.
 

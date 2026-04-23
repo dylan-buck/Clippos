@@ -14,6 +14,7 @@ class CandidateClip(ContractModel):
     spike_categories: list[str]
     title: str = ""
     hook: str = ""
+    approved: bool = False
 
     @model_validator(mode="after")
     def validate_time_bounds(self) -> "CandidateClip":

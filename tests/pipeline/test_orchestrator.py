@@ -231,6 +231,13 @@ def _prime_review_manifest(
     return run_job(sample_job, stage="review")
 
 
+def _approve_candidates(review_manifest_path: Path, approved_clip_ids: set[str]) -> None:
+    payload = json.loads(review_manifest_path.read_text(encoding="utf-8"))
+    for candidate in payload["candidates"]:
+        candidate["approved"] = candidate["clip_id"] in approved_clip_ids
+    review_manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_run_job_render_stage_without_review_manifest_raises(
     sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -241,12 +248,31 @@ def test_run_job_render_stage_without_review_manifest_raises(
         run_job(sample_job, stage="render")
 
 
+def test_run_job_render_stage_without_approved_candidates_raises(
+    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(sample_job.video_path.parent.resolve())
+    review_manifest_path = _prime_review_manifest(sample_job, monkeypatch)
+    assert review_manifest_path.name == REVIEW_MANIFEST_FILENAME
+
+    def _explode(_manifest: RenderManifest) -> list:
+        raise AssertionError("render should not be invoked without approvals")
+
+    monkeypatch.setattr("clipper.pipeline.orchestrator.render_clip", _explode)
+
+    with pytest.raises(RenderStageError, match="no approved candidates"):
+        run_job(sample_job, stage="render")
+
+
 def test_run_job_render_stage_writes_report_and_invokes_renderer(
     sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     review_manifest_path = _prime_review_manifest(sample_job, monkeypatch)
     assert review_manifest_path.name == REVIEW_MANIFEST_FILENAME
+    review_manifest = json.loads(review_manifest_path.read_text(encoding="utf-8"))
+    approved_clip_id = review_manifest["candidates"][0]["clip_id"]
+    _approve_candidates(review_manifest_path, {approved_clip_id})
 
     rendered_manifests: list[RenderManifest] = []
 
@@ -266,6 +292,7 @@ def test_run_job_render_stage_writes_report_and_invokes_renderer(
     assert first_clip["manifest_path"].endswith("render-manifest.json")
     assert set(first_clip["outputs"].keys()) == {"9:16", "1:1", "16:9"}
     assert len(rendered_manifests) == len(report["clips"])
+    assert all(manifest.approved for manifest in rendered_manifests)
 
 
 def test_run_job_auto_stage_does_not_chain_into_render(

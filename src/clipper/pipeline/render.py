@@ -40,7 +40,7 @@ def build_render_plan(
     probe: MediaProbe,
     workspace_dir: Path,
     ratios: tuple[AspectRatio, ...] = DEFAULT_RATIOS,
-    approved: bool = True,
+    approved: bool | None = None,
 ) -> RenderManifest:
     if not ratios:
         raise ValueError("ratios must not be empty")
@@ -64,7 +64,7 @@ def build_render_plan(
     }
     return RenderManifest(
         clip_id=candidate.clip_id,
-        approved=approved,
+        approved=candidate.approved if approved is None else approved,
         source_video=source_video,
         start_seconds=candidate.start_seconds,
         end_seconds=candidate.end_seconds,

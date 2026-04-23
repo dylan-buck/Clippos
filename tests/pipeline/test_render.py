@@ -107,7 +107,7 @@ def test_build_render_plan_emits_all_three_ratios(
     )
 
     assert manifest.clip_id == "clip-001"
-    assert manifest.approved is True
+    assert manifest.approved is sample_candidate.approved
     assert manifest.start_seconds == 2.0
     assert manifest.end_seconds == 6.0
     assert set(manifest.outputs.keys()) == {"9:16", "1:1", "16:9"}

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, pytest, pydantic, FFmpeg, OpenCV, faster-whisper or WhisperX, pyannote, numpy, rich, optional harness-model SDK adapter
 
-## Status (updated through M1.4)
+## Status (updated through M1.7 smoke coverage)
 
 This file is the original task-by-task blueprint. The shipped implementation
 follows its structure but has diverged in several places where quality-first
@@ -36,6 +36,20 @@ for what landed versus what was planned.
   separately so the scoring pipeline can build `ClipBrief`s from raw windows.
 - **M1.4 Harness-driven scoring (replaces Task 7 and parts of Tasks 9–10).**
   This is the biggest pivot — see "Pivots from the original plan" below.
+- **M1.5 FFmpeg render export (Task 8 expanded).** The render stage now builds
+  per-clip render manifests, writes ASS caption sidecars, and shells out to
+  FFmpeg to produce 9:16, 1:1, and 16:9 MP4s. Crops are static per clip from
+  OneEuro-smoothed anchors; captions use short transcript-derived lines with
+  simple emphasis styling.
+- **M1.6 approval gate.** `CandidateClip.approved` defaults to `false` in
+  `review-manifest.json`. `stage="render"` exports only approved candidates and
+  raises a render-stage error when the manifest has no approved clips. This is
+  currently a JSON-manifest approval workflow, not a UI.
+- **M1.7 workflow smoke coverage.** A generated-video smoke test exercises
+  mine, review, JSON approval, and render through real workspace artifacts and
+  real FFmpeg/ffprobe. It still mocks the expensive ML analysis stages so the
+  local suite does not require a Hugging Face token or heavyweight model
+  downloads.
 
 ### Pivots from the original plan
 
@@ -72,10 +86,14 @@ for what landed versus what was planned.
   `*_write_scoring_response(workspace_dir, response)` alongside
   `*_job_from_args`, all delegating to `clipper.wrappers.common`. Task 10 only
   sketched the job-building path.
-- **Render and auto-approve stages are still ahead.** Tasks 8 (render) and 11
-  (fixtures / E2E coverage) are partially in place — fixtures are wired and
-  the render *manifest* contract exists — but the actual FFmpeg-driven export
-  is M1.5 and E2E coverage is M1.7.
+- **Render is explicit and approval-gated.** `run_job` accepts
+  `stage="mine"|"review"|"render"|"auto"`. `auto` stops at review/scoring and
+  never chains into render; final MP4 export requires `stage="render"` plus
+  approved candidates in `review-manifest.json`.
+- **E2E fixture coverage is in place.** Unit coverage is broad and M1.7 now
+  includes a tiny generated-video smoke test that exercises mine/review/render
+  through real artifacts. Future E2E work should use representative real videos
+  to judge clip quality, caption readability, and crop composition.
 
 ### Canonical references going forward
 

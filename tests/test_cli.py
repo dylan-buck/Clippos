@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 
 import pytest
 from typer.testing import CliRunner
@@ -28,6 +30,18 @@ def test_version_command_prints_package_version() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
+    assert result.stdout == f"clipper-tool {__version__}\n"
+
+
+def test_module_invocation_prints_package_version() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "clipper.cli", "version"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0
     assert result.stdout == f"clipper-tool {__version__}\n"
 
 

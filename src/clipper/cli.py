@@ -71,3 +71,7 @@ def run(
         raise typer.Exit(code=1)
 
     typer.echo(str(artifact_path))
+
+
+if __name__ == "__main__":
+    app()

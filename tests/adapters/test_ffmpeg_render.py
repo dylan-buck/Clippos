@@ -174,6 +174,19 @@ def test_render_clip_raises_when_ffmpeg_missing(
         render_clip(sample_manifest)
 
 
+def test_render_clip_skips_unapproved_manifest(
+    sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    unapproved = sample_manifest.model_copy(update={"approved": False})
+
+    def _explode(_binary: str) -> bool:
+        raise AssertionError("unapproved manifests should not probe ffmpeg")
+
+    monkeypatch.setattr(ffmpeg_render, "_ffmpeg_available", _explode)
+
+    assert render_clip(unapproved) == []
+
+
 def test_render_clip_raises_on_non_zero_exit(
     sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch
 ) -> None:

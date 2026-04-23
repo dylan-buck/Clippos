@@ -187,12 +187,19 @@ def _finalize_render_stage(
         )
     if not review_manifest.candidates:
         raise RenderStageError("review-manifest.json has no candidates to render")
+    approved_candidates = [
+        candidate for candidate in review_manifest.candidates if candidate.approved
+    ]
+    if not approved_candidates:
+        raise RenderStageError(
+            "review-manifest.json has no approved candidates to render"
+        )
 
     transcript = build_transcript_timeline(transcribe_video(video_path, workspace_dir))
     vision = build_vision_timeline(analyze_video(video_path, workspace_dir))
 
     entries: list[dict] = []
-    for candidate in review_manifest.candidates:
+    for candidate in approved_candidates:
         manifest = build_render_plan(
             candidate=candidate,
             source_video=video_path,

@@ -70,6 +70,19 @@ def test_shared_manifests_round_trip_paths_and_candidates() -> None:
     assert render_manifest.outputs["9:16"] == Path("/tmp/out/clip-001-9x16.mp4")
 
 
+def test_candidate_clip_defaults_to_unapproved_for_review_gate() -> None:
+    candidate = CandidateClip(
+        clip_id="clip-001",
+        start_seconds=12.5,
+        end_seconds=25.0,
+        score=0.91,
+        reasons=["clear hook"],
+        spike_categories=["emotion"],
+    )
+
+    assert candidate.approved is False
+
+
 def test_media_probe_captures_core_probe_fields() -> None:
     probe = MediaProbe(
         duration_seconds=120.0,
