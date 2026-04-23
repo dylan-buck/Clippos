@@ -1,6 +1,7 @@
 # Clipper Tool
 
-Local-first clipping engine for Claude Code, Codex, and Hermes Agent.
+Local-first clipping engine and agent skill for Claude Code, Codex, and Hermes
+Agent.
 
 ## Local Setup
 
@@ -133,6 +134,51 @@ an LLM API directly and does not use any provider SDK or API key.
    MP4s for approved candidates only.
 
 See [docs/architecture/scoring-handoff.md](docs/architecture/scoring-handoff.md) for the full rubric, schema, and caching rules.
+
+## Agent Skill Flow
+
+The repo can also be used as an agent skill. The skill entrypoint is
+[SKILL.md](SKILL.md), with slash-command shims in [commands/clip.md](commands/clip.md)
+and [commands/clip-config.md](commands/clip-config.md).
+
+Target invocation shape:
+
+```text
+/clip /absolute/path/video.mp4
+/clip https://example.com/video.mp4 --ratios 9:16,1:1 --clips 2
+/clip-config --output-dir ~/Documents/ClipperTool --ratios 9:16,1:1,16:9
+```
+
+For attached videos, the agent should resolve the attachment to a local file
+path and pass that path into `/clip`. Direct video URLs are downloaded with the
+skill helper. Platform URLs can work when `yt-dlp` is installed.
+
+The helper script is:
+
+```bash
+CLIPPER_PYTHON="${CLIPPER_PYTHON:-.venv/bin/python}"
+[ -x "$CLIPPER_PYTHON" ] || CLIPPER_PYTHON="$(command -v python3)"
+"$CLIPPER_PYTHON" scripts/clip_skill.py config-check
+"$CLIPPER_PYTHON" scripts/clip_skill.py prepare "$SOURCE"
+"$CLIPPER_PYTHON" scripts/clip_skill.py approve "$REVIEW_MANIFEST" --top 3 --min-score 0.70
+"$CLIPPER_PYTHON" scripts/clip_skill.py outputs "$RENDER_REPORT"
+```
+
+Skill configuration is stored at `~/.config/clipper-tool/.env`. Supported keys:
+
+```env
+CLIPPER_OUTPUT_DIR=~/Documents/ClipperTool
+CLIPPER_RATIOS=9:16,1:1,16:9
+CLIPPER_MAX_CANDIDATES=12
+CLIPPER_APPROVE_TOP=3
+CLIPPER_MIN_SCORE=0.70
+HF_TOKEN=hf_...
+```
+
+The skill renders all three ratios by default because rendering is deterministic
+and does not use the harness model. If the user asks for fewer formats, the job
+uses `output_profile.ratios` and the render stage only writes those requested
+outputs.
 
 ## Current v1 Limitations
 

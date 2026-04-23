@@ -83,6 +83,7 @@ def run_job(job: ClipperJob, *, stage: Stage = "auto") -> Path:
 
     if stage == "render":
         return _finalize_render_stage(
+            job=resolved_job,
             ingest=ingest,
             video_path=canonical_video_path,
             workspace_dir=workspace_dir,
@@ -178,7 +179,11 @@ def _write_review_manifest(
 
 
 def _finalize_render_stage(
-    *, ingest: IngestResult, video_path: Path, workspace_dir: Path
+    *,
+    job: ClipperJob,
+    ingest: IngestResult,
+    video_path: Path,
+    workspace_dir: Path,
 ) -> Path:
     review_manifest = _load_review_manifest(workspace_dir)
     if review_manifest is None:
@@ -207,6 +212,7 @@ def _finalize_render_stage(
             vision=vision,
             probe=ingest.probe,
             workspace_dir=workspace_dir,
+            ratios=tuple(job.output_profile.ratios),
         )
         render_clip(manifest)
         manifest_path = render_manifest_path(workspace_dir, candidate.clip_id)

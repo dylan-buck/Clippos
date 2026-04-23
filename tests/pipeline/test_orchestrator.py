@@ -295,6 +295,36 @@ def test_run_job_render_stage_writes_report_and_invokes_renderer(
     assert all(manifest.approved for manifest in rendered_manifests)
 
 
+def test_run_job_render_stage_honors_job_output_ratios(
+    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(sample_job.video_path.parent.resolve())
+    one_ratio_job = sample_job.model_copy(
+        update={
+            "output_profile": sample_job.output_profile.model_copy(
+                update={"ratios": ["9:16"]}
+            )
+        }
+    )
+    review_manifest_path = _prime_review_manifest(one_ratio_job, monkeypatch)
+    review_manifest = json.loads(review_manifest_path.read_text(encoding="utf-8"))
+    approved_clip_id = review_manifest["candidates"][0]["clip_id"]
+    _approve_candidates(review_manifest_path, {approved_clip_id})
+
+    rendered_manifests: list[RenderManifest] = []
+    monkeypatch.setattr(
+        "clipper.pipeline.orchestrator.render_clip",
+        lambda manifest: rendered_manifests.append(manifest) or [],
+    )
+
+    report_path = run_job(one_ratio_job, stage="render")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert set(report["clips"][0]["outputs"].keys()) == {"9:16"}
+    assert len(rendered_manifests) == 1
+    assert set(rendered_manifests[0].outputs.keys()) == {"9:16"}
+
+
 def test_run_job_auto_stage_does_not_chain_into_render(
     sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:

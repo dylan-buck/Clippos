@@ -10,7 +10,8 @@ reject unexpected fields to keep handoffs explicit and stable.
 - `video_path`: absolute or workspace-resolved source media path
 - `output_dir`: destination directory for per-job workspace artifacts
 - `review_required`: gate that defaults to `true`
-- `output_profile.ratios`: default output aspect ratios in stable priority order
+- `output_profile.ratios`: output aspect ratios rendered during `stage=render`
+  in stable priority order
 - `output_profile.caption_preset`: downstream caption style preset
 - `max_candidates`: maximum number of clips surfaced for review
 
@@ -40,6 +41,10 @@ Workspace artifacts all live under `<output_dir>/jobs/<job_id>/`:
 `review-manifest.json`, `renders/<clip_id>/*`, and `render-report.json`. See
 [scoring-handoff.md](scoring-handoff.md) for the scoring handoff contract and
 [render-manifest.md](render-manifest.md) for the render stage contract.
+
+The agent skill layer uses this same contract. `/clip` defaults to all three
+ratios because rendering does not use model calls, but narrower user requests
+are written into `output_profile.ratios` before render.
 
 ## Validation Rules
 

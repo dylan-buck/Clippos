@@ -1,0 +1,23 @@
+{
+  "name": "clip",
+  "version": "0.1.0",
+  "description": "Local video clipping skill that analyzes videos, scores high-potential clips with the harness model, and renders approved clips in 9:16, 1:1, and 16:9.",
+  "author": {
+    "name": "Dylan Buck",
+    "url": "https://github.com/dylan-buck"
+  },
+  "homepage": "https://github.com/dylan-buck/clipping-tool",
+  "repository": "https://github.com/dylan-buck/clipping-tool",
+  "license": "MIT",
+  "keywords": [
+    "video",
+    "clips",
+    "shorts",
+    "captions",
+    "ffmpeg",
+    "whisperx",
+    "opencv",
+    "agent-skill"
+  ],
+  "hooks": {}
+}

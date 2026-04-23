@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, pytest, pydantic, FFmpeg, OpenCV, faster-whisper or WhisperX, pyannote, numpy, rich, optional harness-model SDK adapter
 
-## Status (updated through M1.7 smoke coverage)
+## Status (updated through M1.8 agent skill packaging)
 
 This file is the original task-by-task blueprint. The shipped implementation
 follows its structure but has diverged in several places where quality-first
@@ -50,6 +50,12 @@ for what landed versus what was planned.
   real FFmpeg/ffprobe. It still mocks the expensive ML analysis stages so the
   local suite does not require a Hugging Face token or heavyweight model
   downloads.
+- **M1.8 agent skill packaging.** The repo now has a root `SKILL.md`,
+  `/clip` and `/clip-config` command shims, plugin metadata, and
+  `scripts/clip_skill.py` for config checks, source preparation, approval, and
+  output reporting. The render stage now honors `output_profile.ratios`, so the
+  skill can default to all three formats while respecting narrower user
+  requests.
 
 ### Pivots from the original plan
 
