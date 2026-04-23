@@ -4,7 +4,9 @@ import pytest
 from typer.testing import CliRunner
 
 from clipper import __version__
+from clipper.adapters.ffmpeg_render import FFmpegRenderError
 from clipper.cli import app
+from clipper.pipeline.orchestrator import RenderStageError
 from clipper.pipeline.scoring import ScoringResponseError
 
 
@@ -98,10 +100,74 @@ def test_run_command_rejects_unknown_stage(
     job_path = tmp_path / "job.json"
     job_path.write_text(json.dumps(sample_job_payload), encoding="utf-8")
 
-    result = cli_runner.invoke(app, ["run", str(job_path), "--stage", "render"])
+    result = cli_runner.invoke(app, ["run", str(job_path), "--stage", "publish"])
 
     assert result.exit_code == 1
     assert "Invalid --stage" in result.output
+
+
+def test_run_command_forwards_render_stage(
+    cli_runner: CliRunner,
+    tmp_path,
+    sample_job_payload: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_run_job(_job, *, stage: str):
+        captured["stage"] = stage
+        return tmp_path / "render-report.json"
+
+    job_path = tmp_path / "job.json"
+    job_path.write_text(json.dumps(sample_job_payload), encoding="utf-8")
+    monkeypatch.setattr("clipper.cli.run_job", fake_run_job)
+
+    result = cli_runner.invoke(app, ["run", str(job_path), "--stage", "render"])
+
+    assert result.exit_code == 0
+    assert captured == {"stage": "render"}
+
+
+def test_run_command_surfaces_render_stage_errors(
+    cli_runner: CliRunner,
+    tmp_path,
+    sample_job_payload: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_path = tmp_path / "job.json"
+    job_path.write_text(json.dumps(sample_job_payload), encoding="utf-8")
+
+    def exploding_run(_job, *, stage: str):
+        raise RenderStageError("no review manifest")
+
+    monkeypatch.setattr("clipper.cli.run_job", exploding_run)
+
+    result = cli_runner.invoke(app, ["run", str(job_path), "--stage", "render"])
+
+    assert result.exit_code == 1
+    assert "Render stage error" in result.output
+    assert "no review manifest" in result.output
+
+
+def test_run_command_surfaces_ffmpeg_render_errors(
+    cli_runner: CliRunner,
+    tmp_path,
+    sample_job_payload: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_path = tmp_path / "job.json"
+    job_path.write_text(json.dumps(sample_job_payload), encoding="utf-8")
+
+    def exploding_run(_job, *, stage: str):
+        raise FFmpegRenderError("ffmpeg exited 1")
+
+    monkeypatch.setattr("clipper.cli.run_job", exploding_run)
+
+    result = cli_runner.invoke(app, ["run", str(job_path), "--stage", "render"])
+
+    assert result.exit_code == 1
+    assert "Render failed" in result.output
+    assert "ffmpeg exited 1" in result.output
 
 
 def test_run_command_surfaces_scoring_response_errors(

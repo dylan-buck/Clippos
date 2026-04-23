@@ -56,7 +56,7 @@ ruff check .
 The CLI currently exposes two commands:
 
 - `python -m clipper.cli version`
-- `python -m clipper.cli run /absolute/path/job.json [--stage mine|review|auto]`
+- `python -m clipper.cli run /absolute/path/job.json [--stage mine|review|render|auto]`
 
 `run` reads a job file, validates it against the shared `ClipperJob` contract, and executes the requested pipeline stage. `--stage` defaults to `auto`.
 
@@ -75,16 +75,27 @@ Minimal job file:
   `scoring-request.json` and prints its path.
 - `review` — consumes an existing `scoring-request.json` plus a matching
   `scoring-response.json` (or cached scores) and writes `review-manifest.json`.
+- `render` — consumes `review-manifest.json`, builds per-clip `RenderManifest`
+  plans, and shells out to FFmpeg to produce 9:16 / 1:1 / 16:9 MP4s with ASS
+  caption sidecars. Emits `render-report.json`.
 - `auto` — runs `mine`, and if the harness has already written the response
-  file, continues into `review` in the same invocation.
+  file, continues into `review` in the same invocation. `auto` does not chain
+  into render; the render stage must be invoked explicitly (M1.6 will add a
+  human approval gate).
 
 All workspace artifacts land under `/absolute/path/output/jobs/<job_id>/`:
 
 ```text
 jobs/<job_id>/scoring-request.json
-jobs/<job_id>/scoring-response.json      # produced by the harness
-jobs/<job_id>/scoring-cache/<hash>.json  # per-clip cache
+jobs/<job_id>/scoring-response.json         # produced by the harness
+jobs/<job_id>/scoring-cache/<hash>.json     # per-clip cache
 jobs/<job_id>/review-manifest.json
+jobs/<job_id>/renders/<clip_id>/render-manifest.json
+jobs/<job_id>/renders/<clip_id>/<clip_id>-9x16.mp4
+jobs/<job_id>/renders/<clip_id>/<clip_id>-1x1.mp4
+jobs/<job_id>/renders/<clip_id>/<clip_id>-16x9.mp4
+jobs/<job_id>/renders/<clip_id>/<clip_id>-*.ass
+jobs/<job_id>/render-report.json
 ```
 
 ### Harness workflow
@@ -106,7 +117,6 @@ See [docs/architecture/scoring-handoff.md](docs/architecture/scoring-handoff.md)
 
 ## Current v1 Limitations
 
-- `run` stops at review-manifest generation; it does not render final clips yet.
 - Transcription + diarization (WhisperX + pyannote) are wired and cached at
   `<workspace>/transcript.json`, keyed by model name.
 - Vision analysis (OpenCV frame sampling, PySceneDetect shot changes, MediaPipe
@@ -114,5 +124,8 @@ See [docs/architecture/scoring-handoff.md](docs/architecture/scoring-handoff.md)
   and cached at `<workspace>/vision.json`, keyed by adapter model.
 - Scoring runs only when the surrounding harness writes a valid
   `scoring-response.json`; the clipper itself does not invoke any LLM.
-- FFmpeg usage is limited to probing media metadata through `ffprobe`.
-- The render contract is planning-only today; output paths are reserved filenames, not completed exports.
+- The render stage requires `ffmpeg` on your `PATH` (libx264 + AAC). Crops are
+  static per clip — driven by OneEuro-smoothed face anchors — and captions are
+  rendered via the ASS subtitle filter.
+- `auto` does not run the render stage; invoke `--stage render` explicitly to
+  produce final MP4s (the M1.6 approval loop will gate this automatically).

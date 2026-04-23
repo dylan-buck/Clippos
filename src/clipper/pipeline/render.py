@@ -1,26 +1,78 @@
+from __future__ import annotations
+
 from pathlib import Path
 
+from clipper.models.analysis import MediaProbe
+from clipper.models.candidate import CandidateClip
+from clipper.models.media import AspectRatio
 from clipper.models.render import RenderManifest
+from clipper.pipeline.captions import build_caption_plan
+from clipper.pipeline.crops import DEFAULT_RATIOS, build_crop_plans
+from clipper.pipeline.transcribe import TranscriptTimeline
+from clipper.pipeline.vision import VisionTimeline
+
+RENDERS_DIRNAME = "renders"
+RENDER_MANIFEST_FILENAME = "render-manifest.json"
 
 
-def build_render_plan(candidate, approved: bool) -> RenderManifest:
+def renders_root(workspace_dir: Path) -> Path:
+    return workspace_dir / RENDERS_DIRNAME
+
+
+def clip_render_dir(workspace_dir: Path, clip_id: str) -> Path:
+    return renders_root(workspace_dir) / clip_id
+
+
+def output_video_path(workspace_dir: Path, clip_id: str, ratio: AspectRatio) -> Path:
+    return clip_render_dir(workspace_dir, clip_id) / _output_filename(clip_id, ratio)
+
+
+def render_manifest_path(workspace_dir: Path, clip_id: str) -> Path:
+    return clip_render_dir(workspace_dir, clip_id) / RENDER_MANIFEST_FILENAME
+
+
+def build_render_plan(
+    *,
+    candidate: CandidateClip,
+    source_video: Path,
+    transcript: TranscriptTimeline,
+    vision: VisionTimeline,
+    probe: MediaProbe,
+    workspace_dir: Path,
+    ratios: tuple[AspectRatio, ...] = DEFAULT_RATIOS,
+    approved: bool = True,
+) -> RenderManifest:
+    if not ratios:
+        raise ValueError("ratios must not be empty")
+
+    caption_plan = build_caption_plan(
+        transcript,
+        start_seconds=candidate.start_seconds,
+        end_seconds=candidate.end_seconds,
+    )
+    crop_plans = build_crop_plans(
+        vision,
+        start_seconds=candidate.start_seconds,
+        end_seconds=candidate.end_seconds,
+        source_width=probe.width,
+        source_height=probe.height,
+        ratios=ratios,
+    )
     outputs = {
-        "9:16": Path(f"{candidate.clip_id}-9x16.mp4"),
-        "1:1": Path(f"{candidate.clip_id}-1x1.mp4"),
-        "16:9": Path(f"{candidate.clip_id}-16x9.mp4"),
+        ratio: output_video_path(workspace_dir, candidate.clip_id, ratio)
+        for ratio in ratios
     }
     return RenderManifest(
         clip_id=candidate.clip_id,
         approved=approved,
+        source_video=source_video,
+        start_seconds=candidate.start_seconds,
+        end_seconds=candidate.end_seconds,
         outputs=outputs,
+        crop_plans=crop_plans,
+        caption_plan=list(caption_plan),
     )
 
 
-def build_caption_lines(transcript_segment) -> list[dict]:
-    return [{"text": transcript_segment.text, "emphasis": transcript_segment.words[:2]}]
-
-
-def choose_crop_anchor(frame) -> tuple[float, float]:
-    if frame.primary_face:
-        return (frame.primary_face.center_x, frame.primary_face.center_y)
-    return (0.5, 0.5)
+def _output_filename(clip_id: str, ratio: AspectRatio) -> str:
+    return f"{clip_id}-{ratio.replace(':', 'x')}.mp4"

@@ -3,13 +3,22 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
+from clipper.adapters import ffmpeg_render
 from clipper.adapters.ffmpeg import probe_media
-from clipper.adapters.storage import write_json
+from clipper.adapters.storage import read_json, write_json
+from clipper.models.analysis import MediaProbe
 from clipper.models.candidate import CandidateClip
 from clipper.models.job import ClipperJob
+from clipper.models.render import RenderManifest
+from clipper.models.review import ReviewManifest
 from clipper.models.scoring import ClipBrief
 from clipper.pipeline.candidates import mine_windows, to_candidate_clip
 from clipper.pipeline.ingest import IngestResult, ingest_job
+from clipper.pipeline.render import (
+    build_render_plan,
+    clip_render_dir,
+    render_manifest_path,
+)
 from clipper.pipeline.review import build_review_manifest
 from clipper.pipeline.scoring import (
     ScoringResponseError,
@@ -23,10 +32,15 @@ from clipper.pipeline.scoring import (
 from clipper.pipeline.transcribe import build_transcript_timeline, run_transcription
 from clipper.pipeline.vision import build_vision_timeline, run_vision
 
-Stage = Literal["mine", "review", "auto"]
-VALID_STAGES: tuple[Stage, ...] = ("mine", "review", "auto")
+Stage = Literal["mine", "review", "render", "auto"]
+VALID_STAGES: tuple[Stage, ...] = ("mine", "review", "render", "auto")
 
 REVIEW_MANIFEST_FILENAME = "review-manifest.json"
+RENDER_REPORT_FILENAME = "render-report.json"
+
+
+class RenderStageError(RuntimeError):
+    pass
 
 
 def _canonical_video_path(video_path: Path) -> Path:
@@ -52,6 +66,10 @@ def score_shortlist(workspace_dir: Path) -> list[dict] | None:
     return scores_to_model_payload(scores)
 
 
+def render_clip(manifest: RenderManifest) -> list[ffmpeg_render.RenderResult]:
+    return ffmpeg_render.render_clip(manifest)
+
+
 def run_job(job: ClipperJob, *, stage: Stage = "auto") -> Path:
     if stage not in VALID_STAGES:
         raise ValueError(f"Unknown stage {stage!r}")
@@ -62,6 +80,13 @@ def run_job(job: ClipperJob, *, stage: Stage = "auto") -> Path:
     probe_data = probe_video(canonical_video_path)
     ingest = ingest_job(resolved_job, probe_data=probe_data)
     workspace_dir = ingest.workspace_dir
+
+    if stage == "render":
+        return _finalize_render_stage(
+            ingest=ingest,
+            video_path=canonical_video_path,
+            workspace_dir=workspace_dir,
+        )
 
     if stage == "review":
         return _finalize_review_stage(ingest, canonical_video_path, workspace_dir)
@@ -152,6 +177,77 @@ def _write_review_manifest(
     return output
 
 
+def _finalize_render_stage(
+    *, ingest: IngestResult, video_path: Path, workspace_dir: Path
+) -> Path:
+    review_manifest = _load_review_manifest(workspace_dir)
+    if review_manifest is None:
+        raise RenderStageError(
+            "stage=render requires review-manifest.json; run stage=review first"
+        )
+    if not review_manifest.candidates:
+        raise RenderStageError("review-manifest.json has no candidates to render")
+
+    transcript = build_transcript_timeline(transcribe_video(video_path, workspace_dir))
+    vision = build_vision_timeline(analyze_video(video_path, workspace_dir))
+
+    entries: list[dict] = []
+    for candidate in review_manifest.candidates:
+        manifest = build_render_plan(
+            candidate=candidate,
+            source_video=video_path,
+            transcript=transcript,
+            vision=vision,
+            probe=ingest.probe,
+            workspace_dir=workspace_dir,
+        )
+        render_clip(manifest)
+        manifest_path = render_manifest_path(workspace_dir, candidate.clip_id)
+        write_json(manifest_path, manifest.model_dump(mode="json"))
+        entries.append(
+            {
+                "clip_id": candidate.clip_id,
+                "manifest_path": str(
+                    manifest_path.relative_to(workspace_dir)
+                    if manifest_path.is_relative_to(workspace_dir)
+                    else manifest_path
+                ),
+                "outputs": {
+                    ratio: str(
+                        output.relative_to(workspace_dir)
+                        if output.is_relative_to(workspace_dir)
+                        else output
+                    )
+                    for ratio, output in manifest.outputs.items()
+                },
+                "render_dir": str(
+                    clip_render_dir(workspace_dir, candidate.clip_id).relative_to(
+                        workspace_dir
+                    )
+                ),
+            }
+        )
+
+    report_path = workspace_dir / RENDER_REPORT_FILENAME
+    write_json(
+        report_path,
+        {
+            "job_id": ingest.job_id,
+            "video_path": str(video_path),
+            "clips": entries,
+        },
+    )
+    return report_path
+
+
+def _load_review_manifest(workspace_dir: Path) -> ReviewManifest | None:
+    path = workspace_dir / REVIEW_MANIFEST_FILENAME
+    if not path.exists():
+        return None
+    data = read_json(path)
+    return ReviewManifest.model_validate(data)
+
+
 def _brief_to_candidate(brief: ClipBrief) -> CandidateClip:
     return CandidateClip(
         clip_id=brief.clip_id,
@@ -161,3 +257,19 @@ def _brief_to_candidate(brief: ClipBrief) -> CandidateClip:
         reasons=list(brief.mining_signals.reasons),
         spike_categories=list(brief.mining_signals.spike_categories),
     )
+
+
+__all__ = [
+    "MediaProbe",
+    "RENDER_REPORT_FILENAME",
+    "REVIEW_MANIFEST_FILENAME",
+    "RenderStageError",
+    "Stage",
+    "VALID_STAGES",
+    "analyze_video",
+    "probe_video",
+    "render_clip",
+    "run_job",
+    "score_shortlist",
+    "transcribe_video",
+]

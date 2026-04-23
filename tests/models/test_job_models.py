@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from clipper.models.analysis import MediaProbe
 from clipper.models.candidate import CandidateClip
 from clipper.models.job import ClipperJob, OutputProfile
-from clipper.models.render import RenderManifest
+from clipper.models.render import CropAnchor, CropPlan, RenderManifest
 from clipper.models.review import ReviewManifest
 
 
@@ -45,10 +45,25 @@ def test_shared_manifests_round_trip_paths_and_candidates() -> None:
         video_path=Path("/tmp/input.mp4"),
         candidates=[candidate],
     )
+    crop_plan = CropPlan(
+        aspect_ratio="9:16",
+        source_width=1920,
+        source_height=1080,
+        target_width=608,
+        target_height=1080,
+        anchors=[
+            CropAnchor(timestamp_seconds=0.0, center_x=0.5, center_y=0.5),
+        ],
+    )
     render_manifest = RenderManifest(
         clip_id="clip-001",
         approved=True,
+        source_video=Path("/tmp/input.mp4"),
+        start_seconds=12.5,
+        end_seconds=25.0,
         outputs={"9:16": Path("/tmp/out/clip-001-9x16.mp4")},
+        crop_plans={"9:16": crop_plan},
+        caption_plan=[],
     )
 
     assert review_manifest.candidates[0].clip_id == "clip-001"

@@ -61,7 +61,9 @@ def test_build_review_manifest_preserves_existing_metadata_when_model_fields_mis
 
     assert manifest.candidates[0].title == "Original candidate title"
     assert manifest.candidates[0].hook == "Original candidate hook"
-    assert manifest.candidates[0].reasons == ["model kept the original rationale focused"]
+    assert manifest.candidates[0].reasons == [
+        "model kept the original rationale focused"
+    ]
 
 
 def test_build_review_manifest_preserves_existing_metadata_when_model_fields_are_none(

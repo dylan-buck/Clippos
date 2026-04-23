@@ -4,7 +4,13 @@ from pathlib import Path
 import pytest
 
 from clipper.models.job import ClipperJob
-from clipper.pipeline.orchestrator import run_job
+from clipper.models.render import RenderManifest
+from clipper.pipeline.orchestrator import (
+    RENDER_REPORT_FILENAME,
+    REVIEW_MANIFEST_FILENAME,
+    RenderStageError,
+    run_job,
+)
 from clipper.pipeline.scoring import (
     SCORING_REQUEST_FILENAME,
     ScoringResponseError,
@@ -200,4 +206,90 @@ def test_run_job_review_stage_builds_manifest_from_existing_scoring_artifacts(
 
 def test_run_job_rejects_unknown_stage(sample_job: ClipperJob) -> None:
     with pytest.raises(ValueError):
-        run_job(sample_job, stage="render")  # type: ignore[arg-type]
+        run_job(sample_job, stage="publish")  # type: ignore[arg-type]
+
+
+def _prime_review_manifest(
+    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    observed_paths: list[Path] = []
+    _patch_pipeline_stages(monkeypatch, observed_paths)
+    run_job(sample_job, stage="mine")
+    mock_model_scores = [
+        {
+            "clip_id": "clip-000",
+            "title": "Render-stage title",
+            "hook": "Render-stage hook",
+            "reasons": ["payoff"],
+            "final_score": 0.81,
+        }
+    ]
+    monkeypatch.setattr(
+        "clipper.pipeline.orchestrator.score_shortlist",
+        lambda _workspace: mock_model_scores,
+    )
+    return run_job(sample_job, stage="review")
+
+
+def test_run_job_render_stage_without_review_manifest_raises(
+    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(sample_job.video_path.parent.resolve())
+    _patch_pipeline_stages(monkeypatch, [])
+
+    with pytest.raises(RenderStageError):
+        run_job(sample_job, stage="render")
+
+
+def test_run_job_render_stage_writes_report_and_invokes_renderer(
+    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(sample_job.video_path.parent.resolve())
+    review_manifest_path = _prime_review_manifest(sample_job, monkeypatch)
+    assert review_manifest_path.name == REVIEW_MANIFEST_FILENAME
+
+    rendered_manifests: list[RenderManifest] = []
+
+    def fake_render_clip(manifest: RenderManifest) -> list:
+        rendered_manifests.append(manifest)
+        return []
+
+    monkeypatch.setattr("clipper.pipeline.orchestrator.render_clip", fake_render_clip)
+
+    report_path = run_job(sample_job, stage="render")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert report_path.name == RENDER_REPORT_FILENAME
+    assert report["clips"]
+    first_clip = report["clips"][0]
+    assert "clip_id" in first_clip
+    assert first_clip["manifest_path"].endswith("render-manifest.json")
+    assert set(first_clip["outputs"].keys()) == {"9:16", "1:1", "16:9"}
+    assert len(rendered_manifests) == len(report["clips"])
+
+
+def test_run_job_auto_stage_does_not_chain_into_render(
+    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(sample_job.video_path.parent.resolve())
+    _patch_pipeline_stages(monkeypatch, [])
+    monkeypatch.setattr(
+        "clipper.pipeline.orchestrator.score_shortlist",
+        lambda _workspace: [
+            {
+                "clip_id": "clip-000",
+                "title": "Auto title",
+                "hook": "Auto hook",
+                "reasons": ["payoff"],
+                "final_score": 0.7,
+            }
+        ],
+    )
+
+    def _explode(_manifest: RenderManifest) -> list:
+        raise AssertionError("auto stage must not invoke the renderer")
+
+    monkeypatch.setattr("clipper.pipeline.orchestrator.render_clip", _explode)
+
+    artifact_path = run_job(sample_job)
+    assert artifact_path.name == REVIEW_MANIFEST_FILENAME

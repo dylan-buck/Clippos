@@ -22,7 +22,9 @@ def sample_job_payload() -> dict:
 
 @pytest.fixture
 def sample_transcript_payload() -> dict:
-    return json.loads((FIXTURES_DIR / "sample_transcript.json").read_text(encoding="utf-8"))
+    return json.loads(
+        (FIXTURES_DIR / "sample_transcript.json").read_text(encoding="utf-8")
+    )
 
 
 @pytest.fixture

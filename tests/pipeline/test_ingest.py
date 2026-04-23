@@ -56,7 +56,9 @@ def test_ingest_job_uses_stable_job_id(tmp_path: Path) -> None:
     assert one.job_id == two.job_id
 
 
-def test_ingest_job_normalizes_raw_ffprobe_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ingest_job_normalizes_raw_ffprobe_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
     job = ClipperJob(video_path=video, output_dir=tmp_path / "out")
@@ -91,7 +93,9 @@ def test_ingest_job_normalizes_raw_ffprobe_payload(tmp_path: Path, monkeypatch: 
     }
 
 
-def test_ingest_job_does_not_create_workspace_on_probe_validation_failure(tmp_path: Path) -> None:
+def test_ingest_job_does_not_create_workspace_on_probe_validation_failure(
+    tmp_path: Path,
+) -> None:
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
     job = ClipperJob(video_path=video, output_dir=tmp_path / "out")

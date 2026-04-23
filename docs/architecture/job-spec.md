@@ -19,20 +19,26 @@ The CLI currently validates a JSON job payload with this contract before invokin
 
 ## Pipeline Stages
 
-`run_job(job, *, stage=...)` supports three stages that drive the harness
-scoring handoff:
+`run_job(job, *, stage=...)` supports four stages:
 
 - `mine` — ingest, transcribe, analyze vision, and write
   `scoring-request.json`; exits at the mine boundary.
 - `review` — load the existing scoring request plus a matching
   `scoring-response.json` (or per-clip cache) and write `review-manifest.json`.
+- `render` — load `review-manifest.json`, re-derive transcript / vision
+  timelines, build a per-clip `RenderManifest`, shell out to FFmpeg to produce
+  9:16 / 1:1 / 16:9 MP4s with ASS caption sidecars, and emit
+  `render-report.json`.
 - `auto` (default) — run `mine`, then continue into `review` when scores are
-  already resolved; otherwise stop after emitting the request.
+  already resolved; otherwise stop after emitting the request. `auto` does not
+  chain into render — the render stage must be invoked explicitly so a human
+  approval step can gate it (M1.6 will formalize the gate).
 
 Workspace artifacts all live under `<output_dir>/jobs/<job_id>/`:
-`scoring-request.json`, `scoring-response.json`, `scoring-cache/*.json`, and
-`review-manifest.json`. See [scoring-handoff.md](scoring-handoff.md) for the
-full contract and harness workflow.
+`scoring-request.json`, `scoring-response.json`, `scoring-cache/*.json`,
+`review-manifest.json`, `renders/<clip_id>/*`, and `render-report.json`. See
+[scoring-handoff.md](scoring-handoff.md) for the scoring handoff contract and
+[render-manifest.md](render-manifest.md) for the render stage contract.
 
 ## Validation Rules
 
@@ -64,4 +70,4 @@ full contract and harness workflow.
 - `MediaProbe`: normalized probe metadata used by analysis and render steps
 - `CandidateClip`: scored clip candidate with time bounds and rationale
 - `ReviewManifest`: review payload tying a job and source video to candidates
-- `RenderManifest`: planned approved-clip output map keyed by the shared aspect-ratio vocabulary
+- `RenderManifest`: per-clip render contract carrying bounds, crop plans, caption plan, and aspect-ratio keyed output paths
