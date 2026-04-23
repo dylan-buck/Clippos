@@ -51,6 +51,21 @@ ruff check .
 .venv/bin/pytest -v
 ```
 
+Run the gated real-video E2E check when you want to validate the production
+path on an actual file:
+
+```bash
+pip install -e ".[engine,dev]"
+export HF_TOKEN=hf_...
+export CLIPPER_E2E_VIDEO=/absolute/path/to/5-10-minute-video.mp4
+.venv/bin/pytest -m e2e -v
+```
+
+That test runs real probe, WhisperX/pyannote transcription, OpenCV/MediaPipe
+vision analysis, JSON scoring handoff, approval, and FFmpeg rendering. It skips
+cleanly unless `CLIPPER_E2E_VIDEO`, FFmpeg/ffprobe, engine dependencies, and a
+Hugging Face token are available.
+
 ## CLI Flow
 
 The CLI currently exposes two commands:

@@ -33,3 +33,6 @@ version = {attr = "clipper.__version__"}
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+markers = [
+    "e2e: real-video pipeline tests that require engine extras, FFmpeg, and HF_TOKEN",
+]
