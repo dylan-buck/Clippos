@@ -1,0 +1,80 @@
+{
+  "segments": [
+    {
+      "speaker": "speaker_1",
+      "start_seconds": 0.0,
+      "end_seconds": 1.4,
+      "text": "Look at this chart.",
+      "words": [
+        {
+          "text": "Look",
+          "start_seconds": 0.0,
+          "end_seconds": 0.28,
+          "confidence": 0.99
+        },
+        {
+          "text": "at",
+          "start_seconds": 0.29,
+          "end_seconds": 0.42,
+          "confidence": 0.98
+        },
+        {
+          "text": "this",
+          "start_seconds": 0.43,
+          "end_seconds": 0.74,
+          "confidence": 0.97
+        },
+        {
+          "text": "chart.",
+          "start_seconds": 0.75,
+          "end_seconds": 1.4,
+          "confidence": 0.96
+        }
+      ]
+    },
+    {
+      "speaker": "speaker_2",
+      "start_seconds": 1.5,
+      "end_seconds": 3.0,
+      "text": "It really spikes at the end.",
+      "words": [
+        {
+          "text": "It",
+          "start_seconds": 1.5,
+          "end_seconds": 1.66,
+          "confidence": 0.95
+        },
+        {
+          "text": "really",
+          "start_seconds": 1.67,
+          "end_seconds": 2.04,
+          "confidence": 0.94
+        },
+        {
+          "text": "spikes",
+          "start_seconds": 2.05,
+          "end_seconds": 2.4,
+          "confidence": 0.93
+        },
+        {
+          "text": "at",
+          "start_seconds": 2.41,
+          "end_seconds": 2.54,
+          "confidence": 0.92
+        },
+        {
+          "text": "the",
+          "start_seconds": 2.55,
+          "end_seconds": 2.67,
+          "confidence": 0.91
+        },
+        {
+          "text": "end.",
+          "start_seconds": 2.68,
+          "end_seconds": 3.0,
+          "confidence": 0.9
+        }
+      ]
+    }
+  ]
+}

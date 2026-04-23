@@ -1,0 +1,34 @@
+{
+  "frames": [
+    {
+      "timestamp_seconds": 0.0,
+      "motion_score": 0.72,
+      "shot_change": false,
+      "primary_face": {
+        "center_x": 0.48,
+        "center_y": 0.37,
+        "width": 0.24,
+        "height": 0.41,
+        "confidence": 0.97
+      }
+    },
+    {
+      "timestamp_seconds": 0.5,
+      "motion_score": 0.21,
+      "shot_change": true,
+      "primary_face": {
+        "center_x": 0.62,
+        "center_y": 0.43,
+        "width": 0.18,
+        "height": 0.35,
+        "confidence": 0.93
+      }
+    },
+    {
+      "timestamp_seconds": 1.0,
+      "motion_score": 0.04,
+      "shot_change": false,
+      "primary_face": null
+    }
+  ]
+}
