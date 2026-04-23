@@ -8,6 +8,86 @@
 
 **Tech Stack:** Python 3.12, pytest, pydantic, FFmpeg, OpenCV, faster-whisper or WhisperX, pyannote, numpy, rich, optional harness-model SDK adapter
 
+## Status (updated through M1.4)
+
+This file is the original task-by-task blueprint. The shipped implementation
+follows its structure but has diverged in several places where quality-first
+and harness-compat concerns required a different shape. Checkbox state in the
+tasks below is not maintained; treat the bullets here as the source of truth
+for what landed versus what was planned.
+
+### Milestones completed
+
+- **M1.1 Transcription (Tasks 3–4).** WhisperX + pyannote 3.1 diarization
+  wired with a cached `<workspace>/transcript.json` keyed by model name.
+  `ffmpeg-python` plus optional engine extras drive the real pipeline; the
+  shipped adapter surface is richer than the `build_transcript_timeline`
+  single-function sketch in Task 4.
+- **M1.2 Vision (Task 5).** Real OpenCV frame sampling, PySceneDetect shot
+  changes, MediaPipe face detection, Farnebäck optical flow, and OneEuro
+  trajectory smoothing. Cached at `<workspace>/vision.json`, keyed by adapter
+  model. Timeline builder matches Task 5 intent; internals are substantially
+  deeper than the stub shown in Step 4.
+- **M1.3 Candidate mining v2 (Task 6).** Rewritten away from the keyword-sum
+  stub: candidates now fuse transcript, vision, and delivery signals, track
+  penalties (`buried_lead`, `dangling_question`, `rambling_middle`),
+  and emit `ScoredWindow`s. `generate_candidates` is still the public entry
+  point but `mine_windows` and `to_candidate_clip` are now exposed
+  separately so the scoring pipeline can build `ClipBrief`s from raw windows.
+- **M1.4 Harness-driven scoring (replaces Task 7 and parts of Tasks 9–10).**
+  This is the biggest pivot — see "Pivots from the original plan" below.
+
+### Pivots from the original plan
+
+- **No provider SDK, no API key.** The original plan mentioned an "optional
+  harness-model SDK adapter." The shipped clipper has no SDK or key path. The
+  `HarnessModelAdapter` Protocol lives in `src/clipper/adapters/harness_model.py`
+  for forward compatibility, but it is not the default path. Scoring happens
+  through workspace JSON files the surrounding harness (Claude Code, Codex,
+  Hermes) reads and writes.
+- **Two-stage handoff via workspace artifacts.** `run_job` now accepts
+  `stage="mine"|"review"|"auto"` and the CLI exposes `--stage`. Mine writes
+  `scoring-request.json` and exits; review merges `scoring-response.json` (or
+  a per-clip cache) into `review-manifest.json`; auto chains both when scores
+  already exist. This replaces the monolithic `run_job(job)` sketch in Task 9
+  Step 3.
+- **Versioned rubric + strict JSON Schema.** `RUBRIC_VERSION = "1.0.0"` locks
+  the 6 dimensions, 6 spike categories, and 5 penalties. The response schema
+  the clipper emits uses `additionalProperties: false` and pins enum values.
+  Harnesses validate before writing; the clipper revalidates on load. This
+  constraint did not exist in the original plan.
+- **Per-clip score cache keyed by `clip_hash`.** `clip_hash` is
+  `sha1(rubric_version|start|end|transcript)[:16]`. Merged scores are cached
+  in `scoring-cache/<clip_hash>.json` and reused on re-runs so re-mining
+  after reorderings doesn't rescore identical clips. Bumping
+  `RUBRIC_VERSION` invalidates the cache automatically.
+- **Review manifest uses harness `final_score` for ordering.**
+  `build_review_manifest` replaces `candidate.score` with `final_score` when
+  present and sorts by `(-score, clip_id)`, so ordering reflects harness
+  judgment rather than the mining prior. Task 7 Step 4 only considered
+  title/hook/reasons enrichment.
+- **Per-harness wrappers gained scoring helpers.** Each of
+  `claude_code.py`, `codex.py`, `hermes.py` adds
+  `*_load_scoring_request(workspace_dir)` and
+  `*_write_scoring_response(workspace_dir, response)` alongside
+  `*_job_from_args`, all delegating to `clipper.wrappers.common`. Task 10 only
+  sketched the job-building path.
+- **Render and auto-approve stages are still ahead.** Tasks 8 (render) and 11
+  (fixtures / E2E coverage) are partially in place — fixtures are wired and
+  the render *manifest* contract exists — but the actual FFmpeg-driven export
+  is M1.5 and E2E coverage is M1.7.
+
+### Canonical references going forward
+
+When these differ from the task snippets below, the canonical references win:
+
+- [docs/architecture/job-spec.md](../../architecture/job-spec.md)
+- [docs/architecture/scoring-handoff.md](../../architecture/scoring-handoff.md)
+- [docs/architecture/review-manifest.md](../../architecture/review-manifest.md)
+- [docs/architecture/render-manifest.md](../../architecture/render-manifest.md)
+- Source of truth for the rubric: `src/clipper/adapters/rubric.py`.
+- Source of truth for workspace artifact names: `src/clipper/pipeline/scoring.py`.
+
 ---
 
 ## File Structure

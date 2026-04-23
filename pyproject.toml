@@ -9,6 +9,14 @@ requires-python = ">=3.12"
 dependencies = ["typer>=0.12", "pydantic>=2.7"]
 
 [project.optional-dependencies]
+engine = [
+    "whisperx>=3.1",
+    "pyannote.audio>=3.1",
+    "opencv-python>=4.9",
+    "scenedetect[opencv]>=0.6.4",
+    "mediapipe>=0.10.14",
+    "numpy>=1.26",
+]
 dev = ["pytest>=8.2", "pytest-cov>=5.0", "ruff>=0.4"]
 
 [project.scripts]

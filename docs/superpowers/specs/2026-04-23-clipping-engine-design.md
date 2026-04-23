@@ -4,6 +4,56 @@ Date: 2026-04-23
 Topic: Local-first clipping engine for Claude Code, Codex, and Hermes Agent
 Status: Draft approved in conversation, written for review
 
+> **Implementation note (updated through M1.4):** the body below is the original
+> spec. The bullets under "Pivots since the original spec" capture where the
+> shipped implementation improved on or corrected the design. Authoritative
+> current contracts live in `docs/architecture/` — always read those first, and
+> use this spec for intent and rationale.
+
+## Pivots since the original spec
+
+- **Harness-model review is a file-based handoff, not an in-process SDK call.**
+  The original "Harness-Model Review" and "optional harness-model SDK adapter"
+  wording could be read as the clipper embedding an LLM client. The shipped
+  design explicitly does not import any provider SDK and never reads an API
+  key. The clipper emits `scoring-request.json` (rubric prompt + JSON Schema +
+  `ClipBrief`s) and waits; the surrounding agent harness — Claude Code, Codex,
+  Hermes — runs the scoring with its in-session model and writes
+  `scoring-response.json` back into the workspace. The `HarnessModelAdapter`
+  Protocol stays in the codebase for forward compatibility but is not the
+  default path. See [scoring-handoff.md](../../architecture/scoring-handoff.md).
+- **Rubric is versioned and the schema is strict.** `RUBRIC_VERSION` (currently
+  `1.0.0`) locks the 6 dimensions, 6 spike categories, and 5 penalty
+  vocabularies. The embedded response schema uses `additionalProperties: false`
+  and pins enum values, so harnesses can validate before writing. Bumping the
+  version invalidates cached scores automatically via the `clip_hash`.
+- **Per-clip score cache.** Every successfully merged `ClipScore` is persisted
+  to `scoring-cache/<clip_hash>.json`. Re-running `mine` after ordering changes
+  (or after an incomplete response) reuses prior harness work and only asks the
+  harness to score genuinely new clips. Cached `clip_id` is rewritten to the
+  current rank.
+- **CLI stages replace a single blocking run.** `run_job` now takes
+  `stage="mine"|"review"|"auto"` and the CLI exposes `--stage`. This is what
+  makes the two-stage handoff usable from a terminal without a live LLM call.
+- **Candidate mining v2 is multimodal and explicit.** Beyond the signals the
+  spec listed, mining now fuses transcript, vision, and delivery signals into
+  `ScoredWindow`s with per-signal reasons and spike categories, and writes them
+  as `MiningSignals` on each `ClipBrief`. Penalties (`buried_lead`,
+  `dangling_question`, `rambling_middle`) are detected structurally at the
+  mining layer rather than deferred to the harness.
+- **Review manifest uses harness `final_score` for ordering.** The shipped
+  `build_review_manifest` overrides `candidate.score` with `final_score` when
+  the harness returns one, then sorts by `(-score, clip_id)` — so the manifest
+  reflects harness judgment, not the mining prior.
+- **Render stage is still planning-only.** The spec's "Final Render" section
+  remains the intent; M1.5 (FFmpeg-driven export) is next. The current
+  `RenderManifest` is a planning contract — see
+  [render-manifest.md](../../architecture/render-manifest.md).
+
+Sections below are the unmodified original spec and are preserved for historical context. Where they conflict with the bullets above, the bullets above are authoritative.
+
+---
+
 ## Goal
 
 Build a shared local clipping engine with thin wrappers for Claude Code, Codex, and Hermes Agent that:

@@ -1,0 +1,10 @@
+{
+  "video_path": "/tmp/input.mp4",
+  "output_dir": "/tmp/out",
+  "review_required": true,
+  "max_candidates": 3,
+  "output_profile": {
+    "ratios": ["9:16", "1:1", "16:9"],
+    "caption_preset": "hook-default"
+  }
+}

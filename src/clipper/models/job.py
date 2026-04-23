@@ -7,9 +7,7 @@ from clipper.models.media import AspectRatio, ContractModel
 
 
 class OutputProfile(ContractModel):
-    ratios: list[AspectRatio] = Field(
-        default_factory=lambda: ["9:16", "1:1", "16:9"]
-    )
+    ratios: list[AspectRatio] = Field(default_factory=lambda: ["9:16", "1:1", "16:9"])
     caption_preset: str = "hook-default"
 
 

@@ -1,6 +1,13 @@
+import json
+from pathlib import Path
+
 import typer
+from pydantic import ValidationError
 
 from clipper import __version__
+from clipper.models.job import ClipperJob
+from clipper.pipeline.orchestrator import VALID_STAGES, run_job
+from clipper.pipeline.scoring import ScoringResponseError
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -14,3 +21,46 @@ def main() -> None:
 @app.command()
 def version() -> None:
     typer.echo(f"clipper-tool {__version__}")
+
+
+@app.command()
+def run(
+    job_path: Path,
+    stage: str = typer.Option(
+        "auto",
+        "--stage",
+        help="Pipeline stage: mine, review, or auto.",
+    ),
+) -> None:
+    if stage not in VALID_STAGES:
+        typer.echo(
+            f"Invalid --stage {stage!r}. Expected one of: {', '.join(VALID_STAGES)}.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        job_text = job_path.read_text(encoding="utf-8")
+    except OSError:
+        typer.echo("Unable to read job file.", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        payload = json.loads(job_text)
+    except json.JSONDecodeError:
+        typer.echo("Invalid job file JSON.", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        job = ClipperJob.model_validate(payload)
+    except ValidationError:
+        typer.echo("Invalid job file payload.", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        artifact_path = run_job(job, stage=stage)
+    except ScoringResponseError as exc:
+        typer.echo(f"Scoring handoff error: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(str(artifact_path))
