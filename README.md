@@ -28,9 +28,12 @@ The engine extras pull in:
 
 - `whisperx` — large-v3 ASR + wav2vec2 forced alignment
 - `pyannote.audio` — `speaker-diarization-3.1`
-- `opencv-python` — frame sampling and Farnebäck optical flow for motion scoring
+- `opencv-python` — frame sampling and colour-space conversion
 - `scenedetect` — `ContentDetector` for shot-change detection
-- `mediapipe` — face detection for framing anchors
+- `retina-face` + `tf-keras` — RetinaFace-ResNet50 for framing anchors
+  (MIT; pulls TensorFlow as a dep — model weights are ~119 MB on first run)
+- `torch` + `torchvision` — RAFT optical flow for motion scoring
+  (auto-selects `mps` / `cuda` / `cpu`)
 
 Diarization requires a Hugging Face account:
 
@@ -62,10 +65,10 @@ export CLIPPER_E2E_VIDEO=/absolute/path/to/5-10-minute-video.mp4
 .venv/bin/pytest -m e2e -v
 ```
 
-That test runs real probe, WhisperX/pyannote transcription, OpenCV/MediaPipe
-vision analysis, JSON scoring handoff, approval, and FFmpeg rendering. It skips
-cleanly unless `CLIPPER_E2E_VIDEO`, FFmpeg/ffprobe, engine dependencies, and a
-Hugging Face token are available.
+That test runs real probe, WhisperX/pyannote transcription, RetinaFace-ResNet50
+face detection, RAFT optical flow, JSON scoring handoff, approval, and FFmpeg
+rendering. It skips cleanly unless `CLIPPER_E2E_VIDEO`, FFmpeg/ffprobe, engine
+dependencies, and a Hugging Face token are available.
 
 ## CLI Flow
 
@@ -187,9 +190,11 @@ outputs.
 
 - Transcription + diarization (WhisperX + pyannote) are wired and cached at
   `<workspace>/transcript.json`, keyed by model name.
-- Vision analysis (OpenCV frame sampling, PySceneDetect shot changes, MediaPipe
-  face detection, Farnebäck optical flow, OneEuro trajectory smoothing) is wired
-  and cached at `<workspace>/vision.json`, keyed by adapter model.
+- Vision analysis (OpenCV frame sampling, PySceneDetect shot changes,
+  RetinaFace-ResNet50 face detection via `retina-face`, torchvision RAFT
+  optical flow, OneEuro trajectory smoothing) is wired and cached at
+  `<workspace>/vision.json`, keyed by adapter model. RAFT auto-selects the
+  best available PyTorch device (`mps` / `cuda` / `cpu`).
 - Scoring runs only when the surrounding harness writes a valid
   `scoring-response.json`; the clipper itself does not invoke any LLM.
 - The render stage requires `ffmpeg` on your `PATH` (libx264 + AAC). The render

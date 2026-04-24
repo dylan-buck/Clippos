@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -122,21 +121,16 @@ def test_build_frames_rounds_motion_and_timestamps() -> None:
     assert frames[1]["motion_score"] == round(1.0, 4)
 
 
-def test_extract_faces_reads_mediapipe_detection_shape() -> None:
-    detection = SimpleNamespace(
-        detections=[
-            SimpleNamespace(
-                location_data=SimpleNamespace(
-                    relative_bounding_box=SimpleNamespace(
-                        xmin=0.2, ymin=0.1, width=0.3, height=0.4
-                    )
-                ),
-                score=[0.88],
-            )
-        ]
-    )
+def test_extract_faces_reads_retinaface_detection_shape() -> None:
+    detection = {
+        "face_1": {
+            "score": 0.88,
+            "facial_area": [200, 100, 500, 500],
+            "landmarks": {},
+        }
+    }
 
-    faces = _extract_faces(detection)
+    faces = _extract_faces(detection, frame_shape=(1000, 1000))
 
     assert len(faces) == 1
     face = faces[0]
@@ -147,12 +141,22 @@ def test_extract_faces_reads_mediapipe_detection_shape() -> None:
     assert face.confidence == pytest.approx(0.88)
 
 
-def test_extract_faces_skips_detections_without_bounding_box() -> None:
-    detection = SimpleNamespace(
-        detections=[SimpleNamespace(location_data=None, score=[0.9])]
-    )
+def test_extract_faces_skips_zero_area_boxes() -> None:
+    detection = {
+        "face_1": {"score": 0.9, "facial_area": [100, 100, 100, 100]},
+    }
 
-    assert _extract_faces(detection) == []
+    assert _extract_faces(detection, frame_shape=(1000, 1000)) == []
+
+
+def test_extract_faces_returns_empty_for_empty_detections() -> None:
+    assert _extract_faces({}, frame_shape=(1000, 1000)) == []
+
+
+def test_extract_faces_skips_records_without_facial_area() -> None:
+    detection = {"face_1": {"score": 0.9, "landmarks": {}}}
+
+    assert _extract_faces(detection, frame_shape=(1000, 1000)) == []
 
 
 def test_analyze_composes_pipeline_stages(
@@ -225,11 +229,11 @@ def test_analyze_raises_when_no_samples_available(
 
 
 def test_analyze_module_exposes_default_model_constant() -> None:
-    assert vision_adapter.DEFAULT_MODEL == "opencv-mediapipe-scenedetect"
+    assert vision_adapter.DEFAULT_MODEL == "retinaface-resnet50-raft-scenedetect"
 
 
 def _stub_sample(timestamp: float) -> FrameSample:
-    return FrameSample(timestamp_seconds=timestamp, rgb=object(), gray_small=object())
+    return FrameSample(timestamp_seconds=timestamp, rgb=object(), rgb_small=object())
 
 
 def _face(center_x: float, center_y: float) -> RawFace:

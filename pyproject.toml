@@ -14,7 +14,10 @@ engine = [
     "pyannote.audio>=3.1",
     "opencv-python>=4.9",
     "scenedetect[opencv]>=0.6.4",
-    "mediapipe>=0.10.14",
+    "retina-face>=0.0.17",
+    "tf-keras>=2.16",
+    "torch>=2.2",
+    "torchvision>=0.17",
     "numpy>=1.26",
 ]
 dev = ["pytest>=8.2", "pytest-cov>=5.0", "ruff>=0.4"]

@@ -7,7 +7,7 @@ from typing import Any
 
 from clipper.adapters.one_euro import OneEuroFilter
 
-DEFAULT_MODEL = "opencv-mediapipe-scenedetect"
+DEFAULT_MODEL = "retinaface-resnet50-raft-scenedetect"
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class VisionError(RuntimeError):
 class FrameSample:
     timestamp_seconds: float
     rgb: Any = field(repr=False)
-    gray_small: Any = field(repr=False)
+    rgb_small: Any = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -155,12 +155,12 @@ def _sample_frames(video_path: Path, config: VisionConfig) -> list[FrameSample]:
             if frame_index % stride == 0:
                 timestamp_seconds = frame_index / source_fps
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                gray_small = _downscale_to_gray(frame, config.motion_frame_width)
+                rgb_small = _downscale_to_rgb(frame, config.motion_frame_width)
                 samples.append(
                     FrameSample(
                         timestamp_seconds=timestamp_seconds,
                         rgb=rgb,
-                        gray_small=gray_small,
+                        rgb_small=rgb_small,
                     )
                 )
             frame_index += 1
@@ -169,16 +169,16 @@ def _sample_frames(video_path: Path, config: VisionConfig) -> list[FrameSample]:
         capture.release()
 
 
-def _downscale_to_gray(frame: Any, target_width: int) -> Any:
+def _downscale_to_rgb(frame: Any, target_width: int) -> Any:
     import cv2
 
     height, width = frame.shape[:2]
     if width <= 0 or target_width <= 0:
-        return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     scale = target_width / width
     new_size = (target_width, max(int(round(height * scale)), 1))
     resized = cv2.resize(frame, new_size, interpolation=cv2.INTER_AREA)
-    return cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+    return cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
 
 
 def _detect_shot_changes(video_path: Path, *, threshold: float) -> list[float]:
@@ -200,40 +200,50 @@ def _detect_shot_changes(video_path: Path, *, threshold: float) -> list[float]:
 def _detect_faces_per_frame(
     samples: list[FrameSample], *, min_confidence: float
 ) -> list[RawFace | None]:
-    import mediapipe as mp
+    import cv2
+    from retinaface import RetinaFace
 
+    model = RetinaFace.build_model()
     results: list[RawFace | None] = []
-    detector_ctx = mp.solutions.face_detection.FaceDetection(
-        model_selection=1, min_detection_confidence=min_confidence
-    )
-    with detector_ctx as detector:
-        for sample in samples:
-            detection = detector.process(sample.rgb)
-            faces = _extract_faces(detection)
-            results.append(select_primary_face(faces))
+    for sample in samples:
+        bgr = cv2.cvtColor(sample.rgb, cv2.COLOR_RGB2BGR)
+        detection = RetinaFace.detect_faces(
+            bgr,
+            threshold=min_confidence,
+            model=model,
+        )
+        faces = _extract_faces(detection, sample.rgb.shape[:2])
+        results.append(select_primary_face(faces))
     return results
 
 
-def _extract_faces(detection: Any) -> list[RawFace]:
-    raw_detections = getattr(detection, "detections", None) or []
+def _extract_faces(detection: Any, frame_shape: tuple[int, int]) -> list[RawFace]:
+    height, width = frame_shape
+    if width <= 0 or height <= 0:
+        return []
+    if not isinstance(detection, dict) or not detection:
+        return []
     faces: list[RawFace] = []
-    for item in raw_detections:
-        location = getattr(item, "location_data", None)
-        bbox = getattr(location, "relative_bounding_box", None) if location else None
-        if bbox is None:
+    for record in detection.values():
+        if not isinstance(record, dict):
             continue
-        xmin = float(getattr(bbox, "xmin", 0.0) or 0.0)
-        ymin = float(getattr(bbox, "ymin", 0.0) or 0.0)
-        width = float(getattr(bbox, "width", 0.0) or 0.0)
-        height = float(getattr(bbox, "height", 0.0) or 0.0)
-        score_values = list(getattr(item, "score", []) or [])
-        confidence = float(score_values[0]) if score_values else 0.0
+        bbox = record.get("facial_area")
+        if bbox is None or len(bbox) < 4:
+            continue
+        xmin, ymin, xmax, ymax = (float(v) for v in bbox[:4])
+        box_width = max(xmax - xmin, 0.0)
+        box_height = max(ymax - ymin, 0.0)
+        if box_width <= 0.0 or box_height <= 0.0:
+            continue
+        confidence = float(record.get("score", 0.0))
+        center_x = (xmin + xmax) / 2.0 / width
+        center_y = (ymin + ymax) / 2.0 / height
         faces.append(
             RawFace(
-                center_x=_clamp01(xmin + width / 2.0),
-                center_y=_clamp01(ymin + height / 2.0),
-                width=_clamp01(width),
-                height=_clamp01(height),
+                center_x=_clamp01(center_x),
+                center_y=_clamp01(center_y),
+                width=_clamp01(box_width / width),
+                height=_clamp01(box_height / height),
                 confidence=_clamp01(confidence),
             )
         )
@@ -241,26 +251,66 @@ def _extract_faces(detection: Any) -> list[RawFace]:
 
 
 def _compute_motion_per_frame(samples: list[FrameSample]) -> list[float]:
-    import cv2
+    if len(samples) < 2:
+        return [0.0] * len(samples)
+
     import numpy as np
+    import torch
+    from torchvision.models.optical_flow import Raft_Large_Weights, raft_large
+
+    device = _select_device(torch)
+    weights = Raft_Large_Weights.DEFAULT
+    model = raft_large(weights=weights).to(device).eval()
+    preprocess = weights.transforms()
 
     magnitudes: list[float] = [0.0]
-    for previous, current in zip(samples, samples[1:], strict=False):
-        flow = cv2.calcOpticalFlowFarneback(
-            previous.gray_small,
-            current.gray_small,
-            None,
-            0.5,
-            3,
-            15,
-            3,
-            5,
-            1.2,
-            0,
-        )
-        magnitude = float(np.linalg.norm(flow, axis=2).mean())
-        magnitudes.append(magnitude)
+    with torch.inference_mode():
+        for previous, current in zip(samples, samples[1:], strict=False):
+            prev_tensor = _rgb_to_tensor(previous.rgb_small)
+            curr_tensor = _rgb_to_tensor(current.rgb_small)
+            prev_batch, curr_batch = preprocess(prev_tensor, curr_tensor)
+            prev_batch = _pad_to_multiple(prev_batch, multiple=8)
+            curr_batch = _pad_to_multiple(curr_batch, multiple=8)
+            prev_batch = prev_batch.to(device)
+            curr_batch = curr_batch.to(device)
+            list_of_flows = model(prev_batch, curr_batch)
+            flow = list_of_flows[-1][0].detach().cpu().numpy()
+            magnitude = float(np.linalg.norm(flow, axis=0).mean())
+            magnitudes.append(magnitude)
     return magnitudes
+
+
+def _rgb_to_tensor(rgb: Any) -> Any:
+    import numpy as np
+    import torch
+
+    array = np.ascontiguousarray(rgb)
+    if array.ndim != 3 or array.shape[-1] != 3:
+        raise VisionError("RAFT motion requires HxWx3 RGB frames")
+    if array.dtype != np.uint8:
+        array = array.astype(np.uint8)
+    return torch.from_numpy(array).permute(2, 0, 1).unsqueeze(0)
+
+
+def _pad_to_multiple(tensor: Any, *, multiple: int) -> Any:
+    import torch.nn.functional as F
+
+    _, _, h, w = tensor.shape
+    pad_h = (multiple - h % multiple) % multiple
+    pad_w = (multiple - w % multiple) % multiple
+    if pad_h == 0 and pad_w == 0:
+        return tensor
+    return F.pad(tensor, (0, pad_w, 0, pad_h), mode="replicate")
+
+
+def _select_device(torch_module: Any) -> Any:
+    if torch_module.cuda.is_available():
+        return torch_module.device("cuda")
+    backends = getattr(torch_module, "backends", None)
+    mps = getattr(backends, "mps", None) if backends is not None else None
+    if mps is not None and mps.is_available():
+        return torch_module.device("mps")
+    return torch_module.device("cpu")
 
 
 def _shot_timestamp_lookup(

@@ -88,7 +88,9 @@ def _require_binary(binary: str) -> None:
 def _require_engine_dependencies() -> None:
     pytest.importorskip("whisperx")
     pytest.importorskip("cv2")
-    pytest.importorskip("mediapipe")
+    pytest.importorskip("retinaface")
+    pytest.importorskip("torch")
+    pytest.importorskip("torchvision")
     pytest.importorskip("scenedetect")
 
 

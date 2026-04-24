@@ -24,10 +24,11 @@ for what landed versus what was planned.
   shipped adapter surface is richer than the `build_transcript_timeline`
   single-function sketch in Task 4.
 - **M1.2 Vision (Task 5).** Real OpenCV frame sampling, PySceneDetect shot
-  changes, MediaPipe face detection, Farnebäck optical flow, and OneEuro
-  trajectory smoothing. Cached at `<workspace>/vision.json`, keyed by adapter
-  model. Timeline builder matches Task 5 intent; internals are substantially
-  deeper than the stub shown in Step 4.
+  changes, RetinaFace-ResNet50 face detection (via `retina-face` + TensorFlow),
+  torchvision RAFT optical flow with auto-selected `mps`/`cuda`/`cpu` device,
+  and OneEuro trajectory smoothing. Cached at `<workspace>/vision.json`, keyed
+  by adapter model. Timeline builder matches Task 5 intent; internals are
+  substantially deeper than the stub shown in Step 4.
 - **M1.3 Candidate mining v2 (Task 6).** Rewritten away from the keyword-sum
   stub: candidates now fuse transcript, vision, and delivery signals, track
   penalties (`buried_lead`, `dangling_question`, `rambling_middle`),

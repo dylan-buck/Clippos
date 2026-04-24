@@ -64,7 +64,7 @@ def test_build_vision_timeline_rejects_out_of_range_normalized_values(
 
 def _fake_analyzer_result(sample_face_payload: dict) -> dict:
     return {
-        "model": "opencv-mediapipe-scenedetect",
+        "model": "retinaface-resnet50-raft-scenedetect",
         "frames": sample_face_payload["frames"],
     }
 
@@ -93,7 +93,7 @@ def test_run_vision_writes_cache_and_returns_payload(
     cache_path = workspace / VISION_CACHE_FILENAME
     assert cache_path.exists()
     cached = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert cached["metadata"] == {"model": "opencv-mediapipe-scenedetect"}
+    assert cached["metadata"] == {"model": "retinaface-resnet50-raft-scenedetect"}
     assert cached["payload"] == payload
 
 
@@ -132,7 +132,7 @@ def test_run_vision_reuses_cache_when_model_matches(
     cache_path.write_text(
         json.dumps(
             {
-                "metadata": {"model": "opencv-mediapipe-scenedetect"},
+                "metadata": {"model": "retinaface-resnet50-raft-scenedetect"},
                 "payload": {"frames": sample_face_payload["frames"]},
             }
         ),
@@ -181,7 +181,7 @@ def test_run_vision_reruns_when_cached_model_mismatches(
     assert calls == [video]
     assert payload == {"frames": sample_face_payload["frames"]}
     refreshed = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert refreshed["metadata"]["model"] == "opencv-mediapipe-scenedetect"
+    assert refreshed["metadata"]["model"] == "retinaface-resnet50-raft-scenedetect"
 
 
 def test_run_vision_reruns_when_cache_is_corrupt(
@@ -205,7 +205,7 @@ def test_run_vision_reruns_when_cache_is_corrupt(
 
     assert payload == {"frames": sample_face_payload["frames"]}
     refreshed = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert refreshed["metadata"]["model"] == "opencv-mediapipe-scenedetect"
+    assert refreshed["metadata"]["model"] == "retinaface-resnet50-raft-scenedetect"
 
 
 def test_run_vision_reruns_when_cache_shape_is_wrong(
