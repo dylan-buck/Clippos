@@ -231,7 +231,9 @@ def _prime_review_manifest(
     return run_job(sample_job, stage="review")
 
 
-def _approve_candidates(review_manifest_path: Path, approved_clip_ids: set[str]) -> None:
+def _approve_candidates(
+    review_manifest_path: Path, approved_clip_ids: set[str]
+) -> None:
     payload = json.loads(review_manifest_path.read_text(encoding="utf-8"))
     for candidate in payload["candidates"]:
         candidate["approved"] = candidate["clip_id"] in approved_clip_ids

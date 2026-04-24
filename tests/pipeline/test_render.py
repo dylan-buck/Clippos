@@ -203,3 +203,45 @@ def test_build_render_plan_rejects_empty_ratios(
             workspace_dir=tmp_path,
             ratios=(),
         )
+
+
+def test_build_render_plan_selects_track_mode_when_faces_present(
+    sample_candidate, sample_transcript, sample_vision, sample_probe, tmp_path: Path
+) -> None:
+    manifest = build_render_plan(
+        candidate=sample_candidate,
+        source_video=tmp_path / "input.mp4",
+        transcript=sample_transcript,
+        vision=sample_vision,
+        probe=sample_probe,
+        workspace_dir=tmp_path,
+    )
+
+    assert manifest.mode == "TRACK"
+
+
+def test_build_render_plan_selects_general_mode_when_faces_absent(
+    sample_candidate, sample_transcript, sample_probe, tmp_path: Path
+) -> None:
+    vision_without_faces = VisionTimeline(
+        frames=[
+            VisionFrame(
+                timestamp_seconds=timestamp,
+                motion_score=0.1,
+                shot_change=False,
+                primary_face=None,
+            )
+            for timestamp in (2.0, 3.0, 4.0, 5.0, 6.0)
+        ]
+    )
+
+    manifest = build_render_plan(
+        candidate=sample_candidate,
+        source_video=tmp_path / "input.mp4",
+        transcript=sample_transcript,
+        vision=vision_without_faces,
+        probe=sample_probe,
+        workspace_dir=tmp_path,
+    )
+
+    assert manifest.mode == "GENERAL"

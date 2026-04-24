@@ -100,9 +100,7 @@ def _require_hf_token() -> None:
         pytest.skip("HF_TOKEN is required for WhisperX diarization")
 
 
-def _score_for_clip(
-    *, clip_id: str, clip_hash: str, final_score: float
-) -> ClipScore:
+def _score_for_clip(*, clip_id: str, clip_hash: str, final_score: float) -> ClipScore:
     return ClipScore(
         clip_id=clip_id,
         clip_hash=clip_hash,

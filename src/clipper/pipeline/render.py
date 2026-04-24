@@ -5,9 +5,10 @@ from pathlib import Path
 from clipper.models.analysis import MediaProbe
 from clipper.models.candidate import CandidateClip
 from clipper.models.media import AspectRatio
-from clipper.models.render import RenderManifest
+from clipper.models.render import DEFAULT_CAPTION_PRESET, CaptionPreset, RenderManifest
 from clipper.pipeline.captions import build_caption_plan
 from clipper.pipeline.crops import DEFAULT_RATIOS, build_crop_plans
+from clipper.pipeline.scene_strategy import derive_clip_mode
 from clipper.pipeline.transcribe import TranscriptTimeline
 from clipper.pipeline.vision import VisionTimeline
 
@@ -41,6 +42,7 @@ def build_render_plan(
     workspace_dir: Path,
     ratios: tuple[AspectRatio, ...] = DEFAULT_RATIOS,
     approved: bool | None = None,
+    caption_preset: CaptionPreset = DEFAULT_CAPTION_PRESET,
 ) -> RenderManifest:
     if not ratios:
         raise ValueError("ratios must not be empty")
@@ -62,6 +64,11 @@ def build_render_plan(
         ratio: output_video_path(workspace_dir, candidate.clip_id, ratio)
         for ratio in ratios
     }
+    mode = derive_clip_mode(
+        vision,
+        start_seconds=candidate.start_seconds,
+        end_seconds=candidate.end_seconds,
+    )
     return RenderManifest(
         clip_id=candidate.clip_id,
         approved=candidate.approved if approved is None else approved,
@@ -71,6 +78,8 @@ def build_render_plan(
         outputs=outputs,
         crop_plans=crop_plans,
         caption_plan=list(caption_plan),
+        mode=mode,
+        caption_preset=caption_preset,
     )
 
 

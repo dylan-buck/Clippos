@@ -7,8 +7,9 @@ allowed-tools: [Bash, Read, Write, AskUserQuestion]
 Invoke the `clip` skill's configuration workflow with the user's arguments:
 $ARGUMENTS
 
-Resolve `CLIPPER_PYTHON` to `.venv/bin/python` when present, otherwise
-`python3`. Run `"$CLIPPER_PYTHON" scripts/clip_skill.py config-check` first.
+Resolve `CLIPPER_ROOT` to `${CLAUDE_PLUGIN_ROOT:-$PWD}` and `CLIPPER_PYTHON` to
+`$CLIPPER_ROOT/.venv/bin/python` when executable, otherwise `python3`. Run
+`"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-check` first.
 If the user provided defaults, write them with
-`"$CLIPPER_PYTHON" scripts/clip_skill.py config-write ...`.
+`"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-write ...`.
 If required values are missing, ask only for the missing value needed next.

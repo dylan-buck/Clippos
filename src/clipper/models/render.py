@@ -1,11 +1,24 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
 from clipper.models.media import AspectRatio, ContractModel
+
+SceneMode = Literal["TRACK", "GENERAL"]
+
+CaptionPreset = Literal[
+    "hook-default",
+    "bottom-creator",
+    "bottom-compact",
+    "lower-third-clean",
+    "center-punch",
+    "top-clean",
+]
+
+DEFAULT_CAPTION_PRESET: CaptionPreset = "hook-default"
 
 
 class CaptionWord(ContractModel):
@@ -72,6 +85,8 @@ class RenderManifest(ContractModel):
     outputs: dict[AspectRatio, Path]
     crop_plans: dict[AspectRatio, CropPlan]
     caption_plan: list[CaptionLine]
+    mode: SceneMode = "TRACK"
+    caption_preset: CaptionPreset = DEFAULT_CAPTION_PRESET
 
     @model_validator(mode="after")
     def validate_bounds_and_keys(self) -> "RenderManifest":

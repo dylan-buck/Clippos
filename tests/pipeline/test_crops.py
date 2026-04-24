@@ -1,6 +1,13 @@
 import pytest
 
-from clipper.pipeline.crops import build_crop_plans
+from clipper.pipeline.crops import (
+    FAST_PAN_RATE,
+    FAST_PAN_THRESHOLD,
+    SAFE_ZONE_RADIUS,
+    SLOW_PAN_RATE,
+    SmoothedCameraman,
+    build_crop_plans,
+)
 from clipper.pipeline.vision import FaceBox, VisionFrame, VisionTimeline
 
 
@@ -146,3 +153,102 @@ def test_build_crop_plans_rejects_non_positive_source_dims() -> None:
             source_width=0,
             source_height=1080,
         )
+
+
+def test_smoothed_cameraman_holds_still_within_safe_zone() -> None:
+    cameraman = SmoothedCameraman()
+    cameraman.update_target(0.5, 0.5)
+    cameraman.step(0.0, force_snap=True)
+
+    drift = SAFE_ZONE_RADIUS * 0.5
+    cameraman.update_target(0.5 + drift, 0.5)
+    x, _ = cameraman.step(1.0)
+
+    assert x == pytest.approx(0.5)
+
+
+def test_smoothed_cameraman_pans_at_slow_rate_for_small_deltas() -> None:
+    cameraman = SmoothedCameraman()
+    cameraman.update_target(0.3, 0.5)
+    cameraman.step(0.0, force_snap=True)
+
+    delta = SAFE_ZONE_RADIUS + 0.02
+    cameraman.update_target(0.3 + delta, 0.5)
+    x, _ = cameraman.step(1.0)
+
+    assert x == pytest.approx(0.3 + SLOW_PAN_RATE * 1.0)
+
+
+def test_smoothed_cameraman_pans_at_fast_rate_for_large_deltas() -> None:
+    cameraman = SmoothedCameraman()
+    cameraman.update_target(0.2, 0.5)
+    cameraman.step(0.0, force_snap=True)
+
+    cameraman.update_target(0.8, 0.5)
+    dt = 1.0
+    x, _ = cameraman.step(dt)
+
+    assert 0.8 - 0.2 > FAST_PAN_THRESHOLD
+    assert x == pytest.approx(0.2 + FAST_PAN_RATE * dt)
+
+
+def test_smoothed_cameraman_force_snap_teleports_center() -> None:
+    cameraman = SmoothedCameraman()
+    cameraman.update_target(0.2, 0.5)
+    cameraman.step(0.0, force_snap=True)
+    cameraman.update_target(0.9, 0.9)
+
+    x, y = cameraman.step(1.0, force_snap=True)
+
+    assert x == pytest.approx(0.9)
+    assert y == pytest.approx(0.9)
+
+
+def test_build_crop_plans_snaps_on_shot_change() -> None:
+    face_left = _face(0.2)
+    face_right = _face(0.8)
+    timeline = VisionTimeline(
+        frames=[
+            _frame(0.0, face=face_left),
+            _frame(0.5, face=face_left),
+            VisionFrame(
+                timestamp_seconds=1.0,
+                motion_score=0.5,
+                shot_change=True,
+                primary_face=face_right,
+            ),
+            _frame(1.5, face=face_right),
+        ]
+    )
+
+    plan = build_crop_plans(
+        timeline,
+        start_seconds=0.0,
+        end_seconds=2.0,
+        source_width=1920,
+        source_height=1080,
+        ratios=("9:16",),
+    )["9:16"]
+
+    snap_anchor = next(
+        anchor for anchor in plan.anchors if anchor.timestamp_seconds == 1.0
+    )
+    assert snap_anchor.center_x == pytest.approx(0.8)
+
+
+def test_build_crop_plans_dedupes_held_still_runs() -> None:
+    timeline = VisionTimeline(
+        frames=[_frame(t / 4.0, face=_face(0.5)) for t in range(9)]
+    )
+
+    plan = build_crop_plans(
+        timeline,
+        start_seconds=0.0,
+        end_seconds=2.0,
+        source_width=1920,
+        source_height=1080,
+        ratios=("9:16",),
+    )["9:16"]
+
+    assert len(plan.anchors) < 9
+    assert plan.anchors[-1].timestamp_seconds == pytest.approx(2.0)

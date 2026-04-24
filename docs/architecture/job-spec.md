@@ -12,7 +12,11 @@ reject unexpected fields to keep handoffs explicit and stable.
 - `review_required`: gate that defaults to `true`
 - `output_profile.ratios`: output aspect ratios rendered during `stage=render`
   in stable priority order
-- `output_profile.caption_preset`: downstream caption style preset
+- `output_profile.caption_preset`: caption style preset resolved at render time.
+  Must be one of `hook-default`, `bottom-creator`, `bottom-compact`,
+  `lower-third-clean`, `center-punch`, `top-clean`. Defaults to `hook-default`
+  (alias of `bottom-creator`). See
+  [render-manifest.md](render-manifest.md#caption-presets) for the catalog.
 - `max_candidates`: maximum number of clips surfaced for review
 
 The CLI currently validates a JSON job payload with this contract before invoking
@@ -38,9 +42,13 @@ The CLI currently validates a JSON job payload with this contract before invokin
 
 Workspace artifacts all live under `<output_dir>/jobs/<job_id>/`:
 `scoring-request.json`, `scoring-response.json`, `scoring-cache/*.json`,
-`review-manifest.json`, `renders/<clip_id>/*`, and `render-report.json`. See
-[scoring-handoff.md](scoring-handoff.md) for the scoring handoff contract and
-[render-manifest.md](render-manifest.md) for the render stage contract.
+`review-manifest.json`, `renders/<clip_id>/*`, `render-report.json`, and —
+once the `/clip-package` flow runs — `package-request.json`,
+`package-response.json`, `package-report.json`, plus per-clip
+`renders/<clip_id>/package.json`. See
+[scoring-handoff.md](scoring-handoff.md) for the scoring handoff contract,
+[render-manifest.md](render-manifest.md) for the render stage contract, and
+[package-handoff.md](package-handoff.md) for the packaging handoff contract.
 
 The agent skill layer uses this same contract. `/clip` defaults to all three
 ratios because rendering does not use model calls, but narrower user requests

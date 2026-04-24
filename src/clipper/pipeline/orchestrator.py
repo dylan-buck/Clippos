@@ -213,6 +213,7 @@ def _finalize_render_stage(
             probe=ingest.probe,
             workspace_dir=workspace_dir,
             ratios=tuple(job.output_profile.ratios),
+            caption_preset=job.output_profile.caption_preset,
         )
         render_clip(manifest)
         manifest_path = render_manifest_path(workspace_dir, candidate.clip_id)

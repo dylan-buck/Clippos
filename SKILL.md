@@ -32,24 +32,31 @@ file path.
 
 ## Preflight
 
-Run this before the first clip job in a session:
+Run this before the first clip job in a session. `CLIPPER_ROOT` resolves to
+`CLAUDE_PLUGIN_ROOT` when the skill is installed as a plugin, otherwise `$PWD`
+(the repo checkout). Callers can also pin `CLIPPER_ROOT` or `CLIPPER_PYTHON`
+directly:
 
 ```bash
-CLIPPER_PYTHON="${CLIPPER_PYTHON:-$PWD/.venv/bin/python}"
-if [ ! -x "$CLIPPER_PYTHON" ]; then CLIPPER_PYTHON="$(command -v python3)"; fi
-"$CLIPPER_PYTHON" scripts/clip_skill.py config-check
+CLIPPER_ROOT="${CLIPPER_ROOT:-${CLAUDE_PLUGIN_ROOT:-$PWD}}"
+CLIPPER_PYTHON="${CLIPPER_PYTHON:-$CLIPPER_ROOT/.venv/bin/python}"
+[ -x "$CLIPPER_PYTHON" ] || CLIPPER_PYTHON="$(command -v python3)"
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-check
 ```
 
 If `HF_TOKEN` is missing and no cached transcript exists, use `/clip-config` or
 ask the user for setup. The real pipeline needs FFmpeg, ffprobe, engine extras,
 and a Hugging Face token for WhisperX/pyannote diarization.
 
+Every subsequent bash block assumes `CLIPPER_ROOT` and `CLIPPER_PYTHON` are
+resolved with the same four-line prologue.
+
 ## Main Workflow
 
 1. Prepare a job from the source:
 
 ```bash
-"$CLIPPER_PYTHON" scripts/clip_skill.py prepare "$SOURCE" --ratios "9:16,1:1,16:9"
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" prepare "$SOURCE" --ratios "9:16,1:1,16:9"
 ```
 
 Use narrower ratios only when the user asks. The command prints JSON containing
@@ -81,7 +88,7 @@ This writes `scoring-request.json` under the job workspace.
 5. Approve selected clips:
 
 ```bash
-"$CLIPPER_PYTHON" scripts/clip_skill.py approve "$REVIEW_MANIFEST" --top "$APPROVE_TOP" --min-score "$MIN_SCORE"
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" approve "$REVIEW_MANIFEST" --top "$APPROVE_TOP" --min-score "$MIN_SCORE"
 ```
 
 The helper approves top scoring clips above threshold. If none clear the
@@ -99,11 +106,51 @@ ratios by default; render only requested ratios when the user explicitly asks.
 7. Report outputs:
 
 ```bash
-"$CLIPPER_PYTHON" scripts/clip_skill.py outputs "$RENDER_REPORT"
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" outputs "$RENDER_REPORT"
 ```
 
 Return the final MP4 paths grouped by clip and ratio. Include the job workspace
 path and mention if any requested ratio was not rendered.
+
+## Packaging Workflow
+
+Use `/clip-package` after a render finishes to produce per-clip publish packs
+(5+ title candidates, thumbnail overlay lines, a social caption, hashtags, and
+opening-line hooks). Packaging mirrors the scoring handoff: the clipper emits a
+request with an embedded prompt + response schema, the harness model fills in
+the response, the clipper validates and persists per-clip artifacts.
+
+1. Emit the packaging request for the workspace:
+
+```bash
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" package-prompt "$WORKSPACE"
+```
+
+`$WORKSPACE` is the `jobs/<job_id>/` directory containing
+`review-manifest.json` + `scoring-request.json`. The helper writes
+`package-request.json` and prints the approved `clip_ids` plus
+`prompt_version`.
+
+2. Score every clip as the harness model:
+
+- Read `package-request.json`.
+- Follow its embedded `package_prompt` and `response_schema`.
+- Produce one `PublishPack` per clip in the same order, preserving `clip_id`
+  and `clip_hash` verbatim.
+- Write a valid `package-response.json` beside the request.
+
+3. Save the packs:
+
+```bash
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" package-save "$WORKSPACE"
+```
+
+The helper validates the response, writes one `renders/<clip_id>/package.json`
+per clip (next to the rendered MP4s), and emits a rolled-up
+`package-report.json` in the workspace root.
+
+Report the per-clip `package.json` paths along with the rendered MP4 paths so
+the user can paste titles + captions + hashtags straight into the upload form.
 
 ## Config Workflow
 
@@ -111,7 +158,7 @@ Use `/clip-config` when setup is missing or the user wants defaults changed.
 The helper stores config at `~/.config/clipper-tool/.env`:
 
 ```bash
-"$CLIPPER_PYTHON" scripts/clip_skill.py config-write \
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-write \
   --output-dir "$HOME/Documents/ClipperTool" \
   --ratios "9:16,1:1,16:9" \
   --max-candidates 12 \

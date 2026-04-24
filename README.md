@@ -153,15 +153,18 @@ For attached videos, the agent should resolve the attachment to a local file
 path and pass that path into `/clip`. Direct video URLs are downloaded with the
 skill helper. Platform URLs can work when `yt-dlp` is installed.
 
-The helper script is:
+The helper script resolves `CLIPPER_ROOT` against `CLAUDE_PLUGIN_ROOT` when the
+skill is installed as a plugin, and falls back to the repo checkout when run
+locally:
 
 ```bash
-CLIPPER_PYTHON="${CLIPPER_PYTHON:-.venv/bin/python}"
+CLIPPER_ROOT="${CLIPPER_ROOT:-${CLAUDE_PLUGIN_ROOT:-$PWD}}"
+CLIPPER_PYTHON="${CLIPPER_PYTHON:-$CLIPPER_ROOT/.venv/bin/python}"
 [ -x "$CLIPPER_PYTHON" ] || CLIPPER_PYTHON="$(command -v python3)"
-"$CLIPPER_PYTHON" scripts/clip_skill.py config-check
-"$CLIPPER_PYTHON" scripts/clip_skill.py prepare "$SOURCE"
-"$CLIPPER_PYTHON" scripts/clip_skill.py approve "$REVIEW_MANIFEST" --top 3 --min-score 0.70
-"$CLIPPER_PYTHON" scripts/clip_skill.py outputs "$RENDER_REPORT"
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-check
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" prepare "$SOURCE"
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" approve "$REVIEW_MANIFEST" --top 3 --min-score 0.70
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" outputs "$RENDER_REPORT"
 ```
 
 Skill configuration is stored at `~/.config/clipper-tool/.env`. Supported keys:
@@ -189,8 +192,23 @@ outputs.
   and cached at `<workspace>/vision.json`, keyed by adapter model.
 - Scoring runs only when the surrounding harness writes a valid
   `scoring-response.json`; the clipper itself does not invoke any LLM.
-- The render stage requires `ffmpeg` on your `PATH` (libx264 + AAC). Crops are
-  static per clip — driven by OneEuro-smoothed face anchors — and captions are
-  rendered via the ASS subtitle filter.
+- The render stage requires `ffmpeg` on your `PATH` (libx264 + AAC). The render
+  manifest carries a per-clip `mode` (`TRACK` or `GENERAL`) derived from the
+  vision timeline. `TRACK` builds a virtual-camera crop that holds inside a
+  safe zone and pans at a bounded rate (piecewise-linear ffmpeg crop
+  expression, snap on shot change). `GENERAL` runs a blurred-background
+  composition for clips with no clear single subject.
+- Caption styling is preset-driven via `output_profile.caption_preset`
+  (`hook-default` / `bottom-creator` / `bottom-compact` / `lower-third-clean`
+  / `center-punch` / `top-clean`). Each preset resolves to a `CaptionStyle`
+  (alignment, bold, font/margin ratios, outline, shadow) in
+  `pipeline/caption_styles.py` and drives the ASS Style line emitted by the
+  renderer.
 - `auto` does not run the render stage; invoke `--stage render` explicitly to
   produce final MP4s after marking candidates approved in `review-manifest.json`.
+- Packaging (titles, thumbnail overlay lines, social caption, hashtags, hooks)
+  is a separate post-render step driven by `/clip-package` — it reuses the
+  scoring-style request/response handoff so the harness model authors the pack
+  and the clipper validates + persists per-clip `package.json` artifacts next
+  to each rendered MP4. See
+  [docs/architecture/package-handoff.md](docs/architecture/package-handoff.md).

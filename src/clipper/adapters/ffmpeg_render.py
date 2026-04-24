@@ -8,11 +8,14 @@ from pathlib import Path
 from clipper.models.media import AspectRatio
 from clipper.models.render import (
     CaptionLine,
+    CaptionPreset,
     CaptionWord,
     CropAnchor,
     CropPlan,
     RenderManifest,
+    SceneMode,
 )
+from clipper.pipeline.caption_styles import CaptionStyle, resolve_caption_style
 
 SUBTITLE_SUFFIX = ".ass"
 
@@ -25,6 +28,9 @@ CANONICAL_OUTPUT_DIMS: dict[AspectRatio, tuple[int, int]] = {
 NORMAL_COLOR_BGR = "00FFFFFF"
 EMPHASIS_COLOR_BGR = "0000F0FF"
 FONT_NAME = "Helvetica Neue"
+
+GENERAL_BLUR_STRENGTH = 20
+GENERAL_BLUR_ITERATIONS = 1
 
 
 @dataclass(frozen=True)
@@ -52,6 +58,7 @@ def render_clip(
             f"{ffmpeg_binary!r} not found on PATH; install FFmpeg to render"
         )
 
+    caption_style = resolve_caption_style(manifest.caption_preset)
     results: list[RenderResult] = []
     for ratio, output_path in manifest.outputs.items():
         crop_plan = manifest.crop_plans[ratio]
@@ -62,6 +69,7 @@ def render_clip(
             subtitle_path,
             lines=manifest.caption_plan,
             ratio=ratio,
+            style=caption_style,
         )
         _run_ffmpeg(
             ffmpeg_binary=ffmpeg_binary,
@@ -117,14 +125,99 @@ def build_ffmpeg_command(
     subtitle_path: Path,
     output_path: Path,
 ) -> list[str]:
+    if manifest.mode == "GENERAL":
+        return _build_general_command(
+            ffmpeg_binary=ffmpeg_binary,
+            manifest=manifest,
+            ratio=ratio,
+            subtitle_path=subtitle_path,
+            output_path=output_path,
+        )
+    return _build_track_command(
+        ffmpeg_binary=ffmpeg_binary,
+        manifest=manifest,
+        ratio=ratio,
+        crop_plan=crop_plan,
+        subtitle_path=subtitle_path,
+        output_path=output_path,
+    )
+
+
+def _build_track_command(
+    *,
+    ffmpeg_binary: str,
+    manifest: RenderManifest,
+    ratio: AspectRatio,
+    crop_plan: CropPlan,
+    subtitle_path: Path,
+    output_path: Path,
+) -> list[str]:
     canonical_width, canonical_height = CANONICAL_OUTPUT_DIMS[ratio]
-    crop_x, crop_y = _representative_crop_origin(crop_plan=crop_plan)
+    x_keyframes, y_keyframes = _crop_origin_keyframes(crop_plan)
+    x_expr = _piecewise_linear_expr(x_keyframes)
+    y_expr = _piecewise_linear_expr(y_keyframes)
     video_filter = (
         f"crop={crop_plan.target_width}:{crop_plan.target_height}:"
-        f"{crop_x}:{crop_y},"
+        f"{x_expr}:{y_expr},"
         f"scale={canonical_width}:{canonical_height}:flags=lanczos,"
         f"ass='{_escape_for_filter(subtitle_path)}'"
     )
+    return _with_common_encode_flags(
+        _common_input_flags(ffmpeg_binary, manifest),
+        video_flags=["-vf", video_filter],
+        output_path=output_path,
+    )
+
+
+def _build_general_command(
+    *,
+    ffmpeg_binary: str,
+    manifest: RenderManifest,
+    ratio: AspectRatio,
+    subtitle_path: Path,
+    output_path: Path,
+) -> list[str]:
+    canonical_width, canonical_height = CANONICAL_OUTPUT_DIMS[ratio]
+    filter_complex = _build_general_filter_complex(
+        canonical_width=canonical_width,
+        canonical_height=canonical_height,
+        subtitle_path=subtitle_path,
+    )
+    return _with_common_encode_flags(
+        _common_input_flags(ffmpeg_binary, manifest),
+        video_flags=[
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[out]",
+            "-map",
+            "0:a?",
+        ],
+        output_path=output_path,
+    )
+
+
+def _build_general_filter_complex(
+    *,
+    canonical_width: int,
+    canonical_height: int,
+    subtitle_path: Path,
+) -> str:
+    subs = _escape_for_filter(subtitle_path)
+    return (
+        "[0:v]split=2[bg_src][fg_src];"
+        f"[bg_src]scale={canonical_width}:{canonical_height}:"
+        "force_original_aspect_ratio=increase:flags=lanczos,"
+        f"crop={canonical_width}:{canonical_height},"
+        f"boxblur={GENERAL_BLUR_STRENGTH}:{GENERAL_BLUR_ITERATIONS}[bg];"
+        f"[fg_src]scale={canonical_width}:{canonical_height}:"
+        "force_original_aspect_ratio=decrease:flags=lanczos[fg];"
+        "[bg][fg]overlay=(W-w)/2:(H-h)/2[composited];"
+        f"[composited]ass='{subs}'[out]"
+    )
+
+
+def _common_input_flags(ffmpeg_binary: str, manifest: RenderManifest) -> list[str]:
     return [
         ffmpeg_binary,
         "-hide_banner",
@@ -137,8 +230,18 @@ def build_ffmpeg_command(
         f"{manifest.end_seconds:.3f}",
         "-i",
         str(manifest.source_video),
-        "-vf",
-        video_filter,
+    ]
+
+
+def _with_common_encode_flags(
+    prefix: list[str],
+    *,
+    video_flags: list[str],
+    output_path: Path,
+) -> list[str]:
+    return [
+        *prefix,
+        *video_flags,
         "-c:v",
         "libx264",
         "-preset",
@@ -159,27 +262,59 @@ def build_ffmpeg_command(
     ]
 
 
-def _representative_crop_origin(*, crop_plan: CropPlan) -> tuple[int, int]:
-    centroid_x, centroid_y = _centroid(crop_plan.anchors)
+def _crop_origin_keyframes(
+    crop_plan: CropPlan,
+) -> tuple[list[tuple[float, int]], list[tuple[float, int]]]:
     max_origin_x = max(crop_plan.source_width - crop_plan.target_width, 0)
     max_origin_y = max(crop_plan.source_height - crop_plan.target_height, 0)
+    x_keyframes: list[tuple[float, int]] = []
+    y_keyframes: list[tuple[float, int]] = []
+    for anchor in crop_plan.anchors:
+        origin_x, origin_y = _anchor_to_origin(anchor, crop_plan)
+        origin_x = _clamp_int(origin_x, 0, max_origin_x)
+        origin_y = _clamp_int(origin_y, 0, max_origin_y)
+        x_keyframes.append((anchor.timestamp_seconds, origin_x))
+        y_keyframes.append((anchor.timestamp_seconds, origin_y))
+    return x_keyframes, y_keyframes
+
+
+def _anchor_to_origin(anchor: CropAnchor, crop_plan: CropPlan) -> tuple[int, int]:
     origin_x = int(
-        round(centroid_x * crop_plan.source_width - crop_plan.target_width / 2)
+        round(anchor.center_x * crop_plan.source_width - crop_plan.target_width / 2)
     )
     origin_y = int(
-        round(centroid_y * crop_plan.source_height - crop_plan.target_height / 2)
+        round(anchor.center_y * crop_plan.source_height - crop_plan.target_height / 2)
     )
-    return (
-        _clamp_int(origin_x, 0, max_origin_x),
-        _clamp_int(origin_y, 0, max_origin_y),
-    )
+    return origin_x, origin_y
 
 
-def _centroid(anchors: list[CropAnchor]) -> tuple[float, float]:
-    total_x = sum(anchor.center_x for anchor in anchors)
-    total_y = sum(anchor.center_y for anchor in anchors)
-    count = len(anchors)
-    return total_x / count, total_y / count
+def _piecewise_linear_expr(keyframes: list[tuple[float, int]]) -> str:
+    """Emit an ffmpeg eval expression that linearly interpolates between
+    ``(timestamp, value)`` keyframes. Commas are escaped with ``\\,`` so the
+    result can be embedded inside an ffmpeg filter argument. If every keyframe
+    carries the same value, the expression collapses to that scalar — this
+    keeps tight-dedupe plans (e.g., 16:9 from 16:9 source) readable."""
+    if not keyframes:
+        return "0"
+    if all(value == keyframes[0][1] for _, value in keyframes):
+        return str(keyframes[0][1])
+    tail = str(keyframes[-1][1])
+    for index in range(len(keyframes) - 2, -1, -1):
+        t0, v0 = keyframes[index]
+        t1, v1 = keyframes[index + 1]
+        segment_len = t1 - t0
+        if segment_len <= 0 or v0 == v1:
+            piece = str(v0)
+        else:
+            slope = v1 - v0
+            piece = f"({v0}+({slope})*(t-{_fmt_time(t0)})/{_fmt_time(segment_len)})"
+        tail = f"if(lt(t\\,{_fmt_time(t1)})\\,{piece}\\,{tail})"
+    return tail
+
+
+def _fmt_time(value: float) -> str:
+    formatted = f"{value:.6f}".rstrip("0").rstrip(".")
+    return formatted or "0"
 
 
 def _clamp_int(value: int, lower: int, upper: int) -> int:
@@ -199,18 +334,16 @@ def _write_ass_subtitles(
     *,
     lines: list[CaptionLine],
     ratio: AspectRatio,
+    style: CaptionStyle,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     canonical_width, canonical_height = CANONICAL_OUTPUT_DIMS[ratio]
-    font_size = _font_size(canonical_height)
-    margin_v = _margin_vertical(canonical_height)
     path.write_text(
         _render_ass_document(
             lines=lines,
             play_width=canonical_width,
             play_height=canonical_height,
-            font_size=font_size,
-            margin_v=margin_v,
+            style=style,
         ),
         encoding="utf-8",
     )
@@ -221,9 +354,11 @@ def _render_ass_document(
     lines: list[CaptionLine],
     play_width: int,
     play_height: int,
-    font_size: int,
-    margin_v: int,
+    style: CaptionStyle,
 ) -> str:
+    font_size = style.font_size(play_height)
+    margin_v = style.margin_v(play_height)
+    bold_flag = -1 if style.bold else 0
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -239,7 +374,9 @@ def _render_ass_document(
         "ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
         "MarginR, MarginV, Encoding\n"
         f"Style: Default,{FONT_NAME},{font_size},&H{NORMAL_COLOR_BGR}&,&H000000FF&,"
-        f"&H00000000&,&H64000000&,-1,0,0,0,100,100,0,0,1,3,2,2,60,60,{margin_v},1\n"
+        f"&H00000000&,&H64000000&,{bold_flag},0,0,0,100,100,0,0,1,"
+        f"{_fmt_fixed(style.outline)},{_fmt_fixed(style.shadow)},"
+        f"{style.alignment},{style.margin_l},{style.margin_r},{margin_v},1\n"
         "\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, "
@@ -247,6 +384,11 @@ def _render_ass_document(
     )
     events = "".join(_render_dialogue(line) for line in lines)
     return header + events
+
+
+def _fmt_fixed(value: float) -> str:
+    formatted = f"{value:.2f}".rstrip("0").rstrip(".")
+    return formatted or "0"
 
 
 def _render_dialogue(line: CaptionLine) -> str:
@@ -289,9 +431,16 @@ def _format_ass_time(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{whole_seconds:02d}.{centi_part:02d}"
 
 
-def _font_size(play_height: int) -> int:
-    return max(int(round(play_height * 0.05)), 32)
-
-
-def _margin_vertical(play_height: int) -> int:
-    return max(int(round(play_height * 0.12)), 80)
+__all__ = [
+    "CANONICAL_OUTPUT_DIMS",
+    "CaptionPreset",
+    "EMPHASIS_COLOR_BGR",
+    "FFmpegRenderError",
+    "FONT_NAME",
+    "GENERAL_BLUR_STRENGTH",
+    "NORMAL_COLOR_BGR",
+    "RenderResult",
+    "SceneMode",
+    "build_ffmpeg_command",
+    "render_clip",
+]

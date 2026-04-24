@@ -280,3 +280,103 @@ def test_render_clip_honors_custom_subtitle_dir(
     for result in results:
         assert result.subtitle_path.parent == subtitle_dir
         assert result.subtitle_path.exists()
+
+
+def test_track_mode_emits_piecewise_crop_expression(
+    sample_manifest: RenderManifest, tmp_path: Path
+) -> None:
+    crop_plan = CropPlan(
+        aspect_ratio="9:16",
+        source_width=1920,
+        source_height=1080,
+        target_width=608,
+        target_height=1080,
+        anchors=[
+            _anchor(0.0, 0.3),
+            _anchor(1.0, 0.5),
+            _anchor(2.0, 0.7),
+        ],
+    )
+
+    command = build_ffmpeg_command(
+        ffmpeg_binary="ffmpeg",
+        manifest=sample_manifest,
+        ratio="9:16",
+        crop_plan=crop_plan,
+        subtitle_path=tmp_path / "subs.ass",
+        output_path=tmp_path / "out.mp4",
+    )
+
+    filter_value = command[command.index("-vf") + 1]
+    crop_piece = filter_value.split(",scale=", 1)[0]
+    assert crop_piece.startswith("crop=608:1080:")
+    # piecewise expression should reference t and contain escaped commas
+    assert "if(lt(t\\," in crop_piece
+    assert "\\," in crop_piece
+    # nested: three anchors → two if() layers
+    assert crop_piece.count("if(lt(t") == 2
+
+
+def test_general_mode_emits_filter_complex_with_blur_and_overlay(
+    sample_manifest: RenderManifest, tmp_path: Path
+) -> None:
+    general_manifest = sample_manifest.model_copy(update={"mode": "GENERAL"})
+    output_path = general_manifest.outputs["9:16"]
+    subtitle_path = tmp_path / "subs.ass"
+
+    command = build_ffmpeg_command(
+        ffmpeg_binary="ffmpeg",
+        manifest=general_manifest,
+        ratio="9:16",
+        crop_plan=general_manifest.crop_plans["9:16"],
+        subtitle_path=subtitle_path,
+        output_path=output_path,
+    )
+
+    assert "-vf" not in command
+    assert "-filter_complex" in command
+    filter_graph = command[command.index("-filter_complex") + 1]
+    canonical_width, canonical_height = CANONICAL_OUTPUT_DIMS["9:16"]
+    assert "split=2" in filter_graph
+    assert "boxblur=" in filter_graph
+    assert (
+        f"scale={canonical_width}:{canonical_height}:force_original_aspect_ratio=increase"
+        in filter_graph
+    )
+    assert (
+        f"scale={canonical_width}:{canonical_height}:force_original_aspect_ratio=decrease"
+        in filter_graph
+    )
+    assert "overlay=(W-w)/2:(H-h)/2" in filter_graph
+    assert "ass='" in filter_graph
+    # Output mapping explicit so the audio track survives.
+    map_indices = [i for i, arg in enumerate(command) if arg == "-map"]
+    assert len(map_indices) == 2
+    assert command[map_indices[0] + 1] == "[out]"
+    assert command[map_indices[1] + 1] == "0:a?"
+
+
+def test_render_clip_general_mode_invokes_ffmpeg_and_writes_subs(
+    sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    general_manifest = sample_manifest.model_copy(update={"mode": "GENERAL"})
+    monkeypatch.setattr(ffmpeg_render, "_ffmpeg_available", lambda _binary: True)
+
+    invocations: list[list[str]] = []
+
+    def fake_run(
+        command: list[str], **_kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        invocations.append(list(command))
+        return subprocess.CompletedProcess(
+            args=command, returncode=0, stdout="", stderr=""
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    results = render_clip(general_manifest)
+
+    assert len(invocations) == 2
+    for command in invocations:
+        assert "-filter_complex" in command
+        assert "-vf" not in command
+    assert {result.ratio for result in results} == {"9:16", "16:9"}

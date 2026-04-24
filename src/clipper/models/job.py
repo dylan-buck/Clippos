@@ -4,11 +4,12 @@ from typing import Annotated
 from pydantic import Field
 
 from clipper.models.media import AspectRatio, ContractModel
+from clipper.models.render import DEFAULT_CAPTION_PRESET, CaptionPreset
 
 
 class OutputProfile(ContractModel):
     ratios: list[AspectRatio] = Field(default_factory=lambda: ["9:16", "1:1", "16:9"])
-    caption_preset: str = "hook-default"
+    caption_preset: CaptionPreset = DEFAULT_CAPTION_PRESET
 
 
 class ClipperJob(ContractModel):

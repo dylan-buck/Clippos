@@ -27,20 +27,24 @@ The skill keeps expensive model usage inside the hosting harness:
 ## Helper Script
 
 `scripts/clip_skill.py` provides deterministic operations that agents should
-not reimplement:
+not reimplement. Resolve the skill root against `CLAUDE_PLUGIN_ROOT` when
+installed as a plugin, otherwise the repo checkout:
 
 ```bash
-CLIPPER_PYTHON="${CLIPPER_PYTHON:-.venv/bin/python}"
+CLIPPER_ROOT="${CLIPPER_ROOT:-${CLAUDE_PLUGIN_ROOT:-$PWD}}"
+CLIPPER_PYTHON="${CLIPPER_PYTHON:-$CLIPPER_ROOT/.venv/bin/python}"
 [ -x "$CLIPPER_PYTHON" ] || CLIPPER_PYTHON="$(command -v python3)"
-"$CLIPPER_PYTHON" scripts/clip_skill.py config-check
-"$CLIPPER_PYTHON" scripts/clip_skill.py config-write --output-dir ~/Documents/ClipperTool
-"$CLIPPER_PYTHON" scripts/clip_skill.py prepare "$SOURCE" --ratios "9:16,1:1"
-"$CLIPPER_PYTHON" scripts/clip_skill.py approve "$REVIEW_MANIFEST" --top 3 --min-score 0.70
-"$CLIPPER_PYTHON" scripts/clip_skill.py outputs "$RENDER_REPORT"
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-check
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-write --output-dir ~/Documents/ClipperTool
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" prepare "$SOURCE" --ratios "9:16,1:1"
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" approve "$REVIEW_MANIFEST" --top 3 --min-score 0.70
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" outputs "$RENDER_REPORT"
 ```
 
 The helper reads `~/.config/clipper-tool/.env`, then lets real environment
-variables override file values.
+variables override file values. URL sources are validated with `ffprobe` at
+download time so an HTML error page saved as `.mp4` fails at the boundary
+instead of crashing the mine stage.
 
 ## Config Keys
 
