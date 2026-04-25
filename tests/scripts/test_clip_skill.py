@@ -159,6 +159,132 @@ def test_config_check_reports_missing_requirements(tmp_path: Path) -> None:
     assert "ffmpeg" in payload["bins"]
     assert "ffprobe" in payload["bins"]
     assert "ass" in payload["ffmpeg_filters"]
+    # `ready` is the single answer to "can /clip run end-to-end?". Bins,
+    # render path, and engine extras must all be ok. The dev test env
+    # almost always lacks engine extras, so this should be False here —
+    # but the field must exist regardless.
+    assert "ready" in payload
+    assert isinstance(payload["ready"], bool)
+    # engine_imports gates `ready` and tells the harness exactly which
+    # imports are missing — closing the gap where preflight greenlit a
+    # venv that crashed at the first mine stage on a missing whisperx.
+    assert "engine_imports" in payload
+    assert "required" in payload["engine_imports"]
+    assert "missing_required" in payload["engine_imports"]
+    for module in (
+        "torch",
+        "whisperx",
+        "speechbrain",
+        "silero_vad",
+        "cv2",
+        "scenedetect",
+        "retinaface",
+    ):
+        assert module in payload["engine_imports"]["required"]
+
+
+def test_probe_engine_imports_returns_status_for_each_module() -> None:
+    """Probe must list every required engine module and report ready
+    iff none are missing. Whether each module is actually importable
+    depends on the test interpreter — we only assert the contract."""
+    clip_skill = _load_clip_skill_module()
+    payload = clip_skill.probe_engine_imports()
+
+    assert set(payload["required"]) == set(clip_skill.REQUIRED_ENGINE_IMPORTS)
+    assert set(payload["optional"]) == set(clip_skill.OPTIONAL_ENGINE_IMPORTS)
+    assert payload["interpreter"] == sys.executable
+    missing = payload["missing_required"]
+    assert isinstance(missing, list)
+    expected_ready = not missing
+    assert payload["ready"] is expected_ready
+    if missing:
+        assert "hint" in payload
+        assert "pip install" in payload["hint"]
+    for entry in payload["required"].values():
+        assert "available" in entry
+        if not entry["available"]:
+            # Failed imports must carry an error string for debuggability.
+            assert "error" in entry
+
+
+def test_probe_engine_imports_handles_non_importerror_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Engine deps (especially tensorflow under retinaface) sometimes raise
+    RuntimeError during import on misconfigured systems. The probe must
+    catch broadly so a bad import never crashes preflight."""
+    clip_skill = _load_clip_skill_module()
+
+    def angry_import(name: str) -> None:
+        raise RuntimeError(f"refusing to import {name}")
+
+    monkeypatch.setattr(clip_skill.importlib, "import_module", angry_import)
+    payload = clip_skill.probe_engine_imports()
+
+    assert payload["ready"] is False
+    assert set(payload["missing_required"]) == set(clip_skill.REQUIRED_ENGINE_IMPORTS)
+    for entry in payload["required"].values():
+        assert entry["available"] is False
+        assert "RuntimeError" in entry["error"]
+
+
+def test_config_write_root_persists_clipper_root(tmp_path: Path) -> None:
+    """--root is the escape hatch when CLAUDE_PLUGIN_ROOT does not expand
+    inside command shims (Anthropic issue #9354). install.sh calls it
+    automatically; dev users can call it manually."""
+    config_path = tmp_path / ".env"
+    repo_root = Path(__file__).resolve().parents[2]
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "config-write",
+            "--config",
+            str(config_path),
+            "--root",
+            str(repo_root),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert "CLIPPER_ROOT" in payload["keys"]
+
+    written = config_path.read_text(encoding="utf-8")
+    assert f"CLIPPER_ROOT={repo_root}" in written
+
+
+def test_config_write_root_rejects_path_without_helper_script(
+    tmp_path: Path,
+) -> None:
+    """A bogus --root would silently corrupt the prologue's resolution.
+    Validate at write time so the failure is local and obvious."""
+    config_path = tmp_path / ".env"
+    bogus_root = tmp_path / "not-a-checkout"
+    bogus_root.mkdir()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "config-write",
+            "--config",
+            str(config_path),
+            "--root",
+            str(bogus_root),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "scripts/hermes_clip.py" in result.stderr
+    assert not config_path.exists()
 
 
 def test_latest_workspace_plain_prints_bare_path(tmp_path: Path) -> None:

@@ -179,7 +179,10 @@ def _extract_embeddings(
     try:
         import numpy as np
         import torch
-        from speechbrain.inference.speaker import EncoderClassifier
+        try:
+            from speechbrain.inference.speaker import EncoderClassifier
+        except ImportError:
+            from speechbrain.pretrained import EncoderClassifier
     except ImportError as exc:  # pragma: no cover - runtime only
         raise SpeechBrainDiarizationError(
             "speechbrain is required for open-source diarization. "

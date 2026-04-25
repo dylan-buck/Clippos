@@ -19,6 +19,10 @@ Designed Hermes-first. Works anywhere.
 
 Shortest path:
 
+> **Heads up:** first `/clip` run downloads ~3.5 GB of model weights and
+> the pipeline is compute-heavy. Read [Hardware requirements](#hardware-requirements)
+> before installing — 16 GB RAM is the practical floor.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dylan-buck/clipping-tool/main/install.sh | bash
 ```
@@ -114,6 +118,47 @@ The script prints structured JSON with a `next_action`: `score`, `package`,
 `done-renders`, `done-package`, `error`, or `configure`. Your harness reads
 the JSON, writes the scoring/packaging response when prompted, then calls
 `advance --workspace "$WORKSPACE"` again to continue.
+
+## Hardware requirements
+
+The pipeline runs Whisper large-v3 transcription, RetinaFace face
+detection, and RAFT optical flow locally — accurate but compute-heavy.
+Calibrate before installing.
+
+**Minimum (works, may be slow):**
+
+- macOS Apple Silicon (M1+) with 16 GB unified memory, OR
+- Linux x86_64 with 16 GB RAM (NVIDIA GPU strongly recommended)
+- 10 GB free disk: ~3.5 GB model weights + ~2 GB vendored ffmpeg +
+  workspace headroom
+
+**Recommended:**
+
+- Apple Silicon M2 Pro / M3 / M4 with 32 GB, OR NVIDIA RTX 30-series+
+- 50 GB free disk if you plan to keep multiple workspaces
+
+**Expected runtime on a 10-minute source video, M2 Pro 32 GB:**
+
+- First run only: ~5 min model downloads (Whisper, SpeechBrain ECAPA,
+  RetinaFace, RAFT — cached after that)
+- Mining (transcribe + diarize + vision): 3–5 min
+- Render: 1–2 min per ratio (so 3–6 min for the default 9:16 + 1:1 + 16:9)
+- **Your fan will spin up.** Vision (RAFT optical flow on every sampled
+  frame pair) is the loudest stage. This is normal.
+
+**Scaling with duration:**
+
+- 30-min video: ~10–15 min mining, ~3–6 min render per ratio
+- 60-min video: ~25–40 min mining; 16 GB Macs may hit memory pressure
+  during transcription — close Chrome and Slack first
+
+**CPU-only machines (no GPU, no MPS):**
+
+Everything still works, but expect 3–10× slower. A 10-min video may
+take 30–45 min total.
+
+Source videos are auto-capped to 1080p before transcription, so 4K @ 60 fps
+inputs do not blow up memory — only duration scales peak RAM.
 
 ## What it does
 

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import subprocess
 import sys
 from hashlib import sha1
 from pathlib import Path
+
+import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "hermes_clip.py"
 CLIP_SKILL_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "clip_skill.py"
@@ -52,6 +55,71 @@ def test_preflight_reports_missing_requirements(tmp_path: Path) -> None:
     assert "optional_upgrades" in payload
     assert payload["optional_upgrades"]["hf_token"]["available"] is False
     assert "pyannote" in payload["optional_upgrades"]["hf_token"]["enables"]
+    # engine_imports must surface in preflight so a "ready" report
+    # actually means runnable end-to-end. Previously the preflight
+    # cheerfully greenlit a venv that crashed at the first mine stage on
+    # a missing whisperx (witnessed in the dogfood crypto-recap run).
+    assert "engine_imports" in payload
+    assert "missing_required" in payload["engine_imports"]
+
+
+def test_preflight_propagates_engine_misses_into_top_level_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When engine extras are not installed, preflight's `missing` list
+    must include `engine:<module>` entries so the harness has a concrete
+    install instruction. Stub the probe to simulate a clean dev venv."""
+    hermes_clip = _load_hermes_module()
+    clip_skill_module = hermes_clip.clip_skill
+
+    fake_engine_status = {
+        "ready": False,
+        "interpreter": "/fake/.venv/bin/python",
+        "python_version": "3.12.5",
+        "required": {
+            "torch": {"available": False, "error": "ModuleNotFoundError: torch"},
+            "whisperx": {"available": False, "error": "ModuleNotFoundError: whisperx"},
+        },
+        "optional": {},
+        "missing_required": ["torch", "whisperx"],
+        "hint": "Engine extras not installed. Run pip install ...",
+    }
+    monkeypatch.setattr(
+        clip_skill_module, "probe_engine_imports", lambda: fake_engine_status
+    )
+    # Pretend the system bins are fine so engine misses are the only signal.
+    monkeypatch.setattr(
+        clip_skill_module,
+        "probe_render_ffmpeg",
+        lambda: {"ready": True, "source": "system"},
+    )
+    monkeypatch.setattr(
+        hermes_clip, "_which", lambda binary: f"/usr/local/bin/{binary}"
+    )
+    monkeypatch.setattr(
+        clip_skill_module, "ffmpeg_filter_available", lambda _name: True
+    )
+
+    captured: dict[str, dict[str, object]] = {}
+    monkeypatch.setattr(hermes_clip, "_emit", lambda payload: captured.setdefault("payload", payload))
+
+    args = argparse.Namespace(config=tmp_path / "missing.env")
+    rc = hermes_clip.cmd_preflight(args)
+
+    assert rc == 0
+    payload = captured["payload"]
+    assert payload["ready"] is False
+    assert payload["next_action"] == "configure"
+    assert payload["engine_imports"] is fake_engine_status
+    assert "engine:torch" in payload["missing"]
+    assert "engine:whisperx" in payload["missing"]
+    # System bin requirements must NOT show up — only the engine misses.
+    assert "ffmpeg" not in payload["missing"]
+    assert "ffprobe" not in payload["missing"]
+    assert "ffmpeg-libass" not in payload["missing"]
+    # The instructions field should mention the active interpreter so users
+    # know which environment to install into.
+    assert "/fake/.venv/bin/python" in payload["instructions"]
 
 
 def test_advance_rejects_missing_source_and_workspace(tmp_path: Path) -> None:

@@ -128,15 +128,40 @@ skill directory across harnesses:
   prologue from inside the repo checkout so `$PWD` resolves correctly.
 
 ```bash
-CLIPPER_ROOT="${CLIPPER_ROOT:-${HERMES_SKILL_DIR:-${CLAUDE_PLUGIN_ROOT:-$PWD}}}"
+# Resolve CLIPPER_ROOT — env var > harness substitution > known install
+# locations > persisted config > $PWD. The candidate must contain
+# scripts/hermes_clip.py to be accepted.
+# Why so many fallbacks: Hermes substitutes HERMES_SKILL_DIR reliably, but
+# Claude Code's CLAUDE_PLUGIN_ROOT does not always expand inside command
+# bash blocks (Anthropic issue #9354), so we also probe the symlinks
+# install.sh creates and the persisted CLIPPER_ROOT in the config file.
+for candidate in "${CLIPPER_ROOT:-}" "${HERMES_SKILL_DIR:-}" "${CLAUDE_PLUGIN_ROOT:-}" \
+                 "$HOME/.hermes/skills/clip" "$HOME/.claude/skills/clip" \
+                 "$HOME/.codex/skills/clip" "$HOME/.local/share/clipping-tool"; do
+  if [ -n "$candidate" ] && [ -f "$candidate/scripts/hermes_clip.py" ]; then
+    CLIPPER_ROOT="$candidate"; break
+  fi
+done
+if [ -z "${CLIPPER_ROOT:-}" ] && [ -f "$HOME/.config/clipper-tool/.env" ]; then
+  CLIPPER_ROOT="$(awk -F= '/^CLIPPER_ROOT=/{gsub(/^["'"'"']|["'"'"']$/,"",$2); print $2; exit}' "$HOME/.config/clipper-tool/.env")"
+fi
+[ -n "${CLIPPER_ROOT:-}" ] && [ -f "$CLIPPER_ROOT/scripts/hermes_clip.py" ] || \
+  { [ -f "$PWD/scripts/hermes_clip.py" ] && CLIPPER_ROOT="$PWD"; }
 CLIPPER_PYTHON="${CLIPPER_PYTHON:-$CLIPPER_ROOT/.venv/bin/python}"
 [ -x "$CLIPPER_PYTHON" ] || CLIPPER_PYTHON="$(command -v python3)"
 "$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-check
 ```
 
-If neither `HERMES_SKILL_DIR` nor `CLAUDE_PLUGIN_ROOT` is set and the caller
-is not in the repo directory, export `CLIPPER_ROOT` explicitly — the prologue
-will not discover the skill on its own.
+If discovery fails (no env var, no install symlinks, no persisted config,
+not in the repo), persist the path once and every future invocation
+resolves cleanly:
+
+```bash
+"$CLIPPER_ROOT/.venv/bin/python" "$CLIPPER_ROOT/scripts/clip_skill.py" \
+  config-write --root "$CLIPPER_ROOT"
+```
+
+`install.sh` runs that step automatically.
 
 ### Diarization (zero-config by default)
 

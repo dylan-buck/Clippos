@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import shutil
@@ -83,6 +84,17 @@ def build_parser() -> argparse.ArgumentParser:
     config_write.add_argument("--max-candidates", type=int)
     config_write.add_argument("--approve-top", type=int)
     config_write.add_argument("--min-score", type=float)
+    config_write.add_argument(
+        "--root",
+        type=Path,
+        help=(
+            "Persist CLIPPER_ROOT (the absolute path to the clipper-tool "
+            "checkout) so the skill prologue can resolve it even when the "
+            "harness does not set CLAUDE_PLUGIN_ROOT or HERMES_SKILL_DIR. "
+            "install.sh calls this automatically; set it manually for dev "
+            "checkouts."
+        ),
+    )
     config_write.set_defaults(func=cmd_config_write)
 
     prepare = subparsers.add_parser("prepare")
@@ -160,22 +172,42 @@ def build_parser() -> argparse.ArgumentParser:
 
 def cmd_config_check(args: argparse.Namespace) -> int:
     config = merged_config(args.config)
+    bins = {
+        "ffmpeg": shutil.which("ffmpeg"),
+        "ffprobe": shutil.which("ffprobe"),
+        "yt-dlp": shutil.which("yt-dlp"),
+    }
+    ass_available = ffmpeg_filter_available("ass")
+    render_status = probe_render_ffmpeg()
+    engine_status = probe_engine_imports()
+    # `ready` answers the question "can /clip actually run end-to-end on
+    # this machine?". Bins gate ingest; render gates the final mp4 stage;
+    # engine imports gate mine + score. All three must hold.
+    bins_ready = bool(bins["ffmpeg"]) or bool(render_status.get("ready"))
+    bins_ready = bins_ready and (
+        bool(bins["ffprobe"]) or bool(render_status.get("ready"))
+    )
+    ready = bins_ready and bool(render_status.get("ready")) and bool(
+        engine_status.get("ready")
+    )
     payload = {
+        "ready": ready,
         "config_path": str(args.config.expanduser()),
-        "bins": {
-            "ffmpeg": shutil.which("ffmpeg"),
-            "ffprobe": shutil.which("ffprobe"),
-            "yt-dlp": shutil.which("yt-dlp"),
-        },
+        "bins": bins,
         "ffmpeg_filters": {
-            "ass": ffmpeg_filter_available("ass"),
+            "ass": ass_available,
         },
         # The render stage now goes through clipper.adapters.ffmpeg_resolver
         # which auto-falls-back to the vendored static-ffmpeg binary when
         # the system ffmpeg lacks libass. Surface the resolution outcome so
         # users can see whether render will use their system build or
         # download the vendored one on first call.
-        "ffmpeg_render": probe_render_ffmpeg(),
+        "ffmpeg_render": render_status,
+        # Engine extras (whisperx, torch, opencv, retinaface, ...) are
+        # required for mine + score. Probing here turns a previously-
+        # silent gap (preflight passed, mine crashed) into an explicit
+        # not-ready signal with an install hint.
+        "engine_imports": engine_status,
         "env": {
             "CLIPPER_OUTPUT_DIR": bool(config.get("CLIPPER_OUTPUT_DIR")),
             "CLIPPER_RATIOS": bool(config.get("CLIPPER_RATIOS")),
@@ -196,6 +228,91 @@ def cmd_config_check(args: argparse.Namespace) -> int:
     }
     print(json.dumps(payload, indent=2))
     return 0
+
+
+# Engine extras the pipeline actually imports at runtime. Listed in load
+# order so the first failure is also the most likely root cause: torch
+# underpins whisperx + retinaface + RAFT; whisperx is the first heavy
+# import in mine; speechbrain/silero/sklearn drive the default diarizer;
+# scenedetect + cv2 + retinaface drive vision; static_ffmpeg is the
+# vendored render fallback.
+REQUIRED_ENGINE_IMPORTS: tuple[str, ...] = (
+    "torch",
+    "torchvision",
+    "whisperx",
+    "speechbrain",
+    "silero_vad",
+    "sklearn",
+    "cv2",
+    "scenedetect",
+    "retinaface",
+    "static_ffmpeg",
+)
+
+# Optional/upgrade imports — present only when the user opted in. Their
+# absence does not gate `ready`; surface them so the harness can tell the
+# user which upgrades are wired up.
+OPTIONAL_ENGINE_IMPORTS: tuple[str, ...] = (
+    "pyannote.audio",
+)
+
+
+def probe_engine_imports() -> dict[str, object]:
+    """Try importing each engine extra; report which are missing.
+
+    The previous preflight only checked ffmpeg/ffprobe/yt-dlp/libass and
+    cheerfully greenlit a venv that would hard-crash at the first
+    ``mine`` stage on a missing ``whisperx``. This probe closes that gap
+    so a "ready" report actually means "runnable".
+
+    Imports run in the same interpreter as preflight, so the reported
+    status reflects whatever interpreter the harness will actually use to
+    run the pipeline. Errors are caught broadly because some packages
+    (looking at you, tensorflow) raise non-ImportError exceptions during
+    import on misconfigured systems.
+    """
+
+    def try_import(name: str) -> tuple[bool, str | None]:
+        try:
+            importlib.import_module(name)
+        except Exception as exc:  # noqa: BLE001 — engine deps misbehave on import
+            return False, f"{type(exc).__name__}: {exc}"
+        return True, None
+
+    required: dict[str, dict[str, object]] = {}
+    missing_required: list[str] = []
+    for name in REQUIRED_ENGINE_IMPORTS:
+        available, error = try_import(name)
+        entry: dict[str, object] = {"available": available}
+        if error is not None:
+            entry["error"] = error
+        required[name] = entry
+        if not available:
+            missing_required.append(name)
+
+    optional: dict[str, dict[str, object]] = {}
+    for name in OPTIONAL_ENGINE_IMPORTS:
+        available, error = try_import(name)
+        entry = {"available": available}
+        if error is not None:
+            entry["error"] = error
+        optional[name] = entry
+
+    payload: dict[str, object] = {
+        "ready": not missing_required,
+        "interpreter": sys.executable,
+        "python_version": ".".join(str(v) for v in sys.version_info[:3]),
+        "required": required,
+        "optional": optional,
+        "missing_required": missing_required,
+    }
+    if missing_required:
+        payload["hint"] = (
+            "Engine extras not installed in this interpreter "
+            f"({sys.executable}). Run: "
+            f"{sys.executable} -m pip install -e '<repo>[engine]'"
+        )
+    return payload
 
 
 def probe_render_ffmpeg() -> dict[str, object]:
@@ -258,6 +375,18 @@ def cmd_config_write(args: argparse.Namespace) -> int:
         if args.min_score < 0 or args.min_score > 1:
             raise ValueError("CLIPPER_MIN_SCORE must be between 0 and 1")
         values["CLIPPER_MIN_SCORE"] = f"{args.min_score:.2f}"
+    if args.root is not None:
+        # Validate the path actually points at a clipper-tool checkout
+        # before persisting it — otherwise the prologue would happily
+        # resolve a bogus value and fail later with a confusing error.
+        resolved_root = args.root.expanduser().resolve()
+        marker = resolved_root / "scripts" / "hermes_clip.py"
+        if not marker.is_file():
+            raise ValueError(
+                f"--root must point to a clipper-tool checkout (looked for "
+                f"{marker}; not found)"
+            )
+        values["CLIPPER_ROOT"] = str(resolved_root)
 
     existing = read_env_file(args.config)
     existing.update(values)

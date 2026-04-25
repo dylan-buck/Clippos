@@ -145,6 +145,10 @@ def cmd_preflight(args: argparse.Namespace) -> int:
     # If the resolver succeeds (system OR vendored), libass is no longer
     # a "missing" requirement.
     ffmpeg_render_status = clip_skill.probe_render_ffmpeg()
+    # Mine + score will hard-crash without engine extras (whisperx, torch,
+    # cv2, retinaface, etc.). Probe them here so a "ready" report actually
+    # means runnable end-to-end, not just "system bins look ok".
+    engine_status = clip_skill.probe_engine_imports()
     missing: list[str] = []
     if not bins["ffmpeg"] and not ffmpeg_render_status.get("ready"):
         missing.append("ffmpeg")
@@ -152,6 +156,8 @@ def cmd_preflight(args: argparse.Namespace) -> int:
         missing.append("ffprobe")
     if not ass_filter and not ffmpeg_render_status.get("ready"):
         missing.append("ffmpeg-libass")
+    for module in engine_status.get("missing_required", []) or []:
+        missing.append(f"engine:{module}")
 
     has_hf_token = bool(clip_skill.resolve_hf_token(config))
     ready = not missing
@@ -163,6 +169,7 @@ def cmd_preflight(args: argparse.Namespace) -> int:
         "bins": bins,
         "ffmpeg_filters": {"ass": ass_filter},
         "ffmpeg_render": ffmpeg_render_status,
+        "engine_imports": engine_status,
         "config_path": str(args.config.expanduser()),
         "defaults": clip_skill.resolved_defaults(config),
         # HF_TOKEN is no longer a hard requirement — the default diarizer is
@@ -181,9 +188,13 @@ def cmd_preflight(args: argparse.Namespace) -> int:
             "Run `/clip config` to fix missing system requirements. The "
             "render stage needs FFmpeg with libass — install the engine "
             "extras (`pip install -e '.[engine]'`) and the vendored "
-            "static-ffmpeg binary will be used automatically. Diarization "
-            "works out of the box without HF_TOKEN; the token is only "
-            "needed if the user explicitly wants the pyannote upgrade."
+            "static-ffmpeg binary will be used automatically. If "
+            "`engine:*` entries appear in `missing`, the active interpreter "
+            f"({engine_status.get('interpreter')}) lacks engine extras — "
+            "either install them in that interpreter or point CLIPPER_PYTHON "
+            "at one that has them. Diarization works out of the box without "
+            "HF_TOKEN; the token is only needed if the user explicitly "
+            "wants the pyannote upgrade."
         )
     _emit(payload)
     return 0

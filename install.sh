@@ -63,6 +63,15 @@ install_python_env() {
   fi
 }
 
+persist_clipper_root() {
+  # Pin CLIPPER_ROOT in the config file so the skill prologue can resolve
+  # the install dir even when the harness does not propagate
+  # CLAUDE_PLUGIN_ROOT / HERMES_SKILL_DIR (e.g. Claude Code issue #9354).
+  log "Persisting CLIPPER_ROOT to ~/.config/clipper-tool/.env"
+  "$INSTALL_DIR/.venv/bin/python" "$INSTALL_DIR/scripts/clip_skill.py" \
+    config-write --root "$INSTALL_DIR"
+}
+
 link_skill() {
   local target="$1"
   mkdir -p "$(dirname "$target")"
@@ -115,9 +124,15 @@ main() {
 
   checkout_repo
   install_python_env "$python_bin"
+  persist_clipper_root
   install_harness_links
 
   log "Installed clip skill at $INSTALL_DIR"
+  log "First /clip run downloads ~3.5 GB of model weights (Whisper large-v3,"
+  log "SpeechBrain ECAPA, RetinaFace, RAFT) and caches them locally."
+  log "16 GB RAM is the practical floor; expect 3-5 min mining + 1-2 min"
+  log "render per ratio on a 10-min video on Apple Silicon. The fan will"
+  log "spin up during vision — that's normal."
   log "Try: /clip status"
 }
 
