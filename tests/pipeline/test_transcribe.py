@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from clipper.adapters.whisperx import TranscriptionConfig
-from clipper.pipeline.transcribe import (
+from clippos.adapters.whisperx import TranscriptionConfig
+from clippos.pipeline.transcribe import (
     TRANSCRIPT_CACHE_FILENAME,
     build_transcript_timeline,
     run_transcription,
@@ -121,7 +121,7 @@ def test_run_transcription_writes_cache_and_returns_payload(
         return _fake_adapter_result(sample_transcript_payload, model=config.model)
 
     monkeypatch.setattr(
-        "clipper.pipeline.transcribe.whisperx_adapter.transcribe", fake_transcribe
+        "clippos.pipeline.transcribe.whisperx_adapter.transcribe", fake_transcribe
     )
 
     payload = run_transcription(video, workspace)
@@ -146,7 +146,7 @@ def test_run_transcription_round_trips_into_timeline(
     workspace.mkdir()
 
     monkeypatch.setattr(
-        "clipper.pipeline.transcribe.whisperx_adapter.transcribe",
+        "clippos.pipeline.transcribe.whisperx_adapter.transcribe",
         lambda path, *, config: _fake_adapter_result(sample_transcript_payload),
     )
 
@@ -184,7 +184,7 @@ def test_run_transcription_reuses_cache_when_model_matches(
     )
 
     monkeypatch.setattr(
-        "clipper.pipeline.transcribe.whisperx_adapter.transcribe", explode
+        "clippos.pipeline.transcribe.whisperx_adapter.transcribe", explode
     )
 
     payload = run_transcription(video, workspace)
@@ -218,7 +218,7 @@ def test_run_transcription_reruns_when_cached_model_mismatches(
         return _fake_adapter_result(sample_transcript_payload, model=config.model)
 
     monkeypatch.setattr(
-        "clipper.pipeline.transcribe.whisperx_adapter.transcribe", fake_transcribe
+        "clippos.pipeline.transcribe.whisperx_adapter.transcribe", fake_transcribe
     )
 
     payload = run_transcription(video, workspace)
@@ -247,7 +247,7 @@ def test_run_transcription_reruns_when_cache_is_corrupt(
         return _fake_adapter_result(sample_transcript_payload, model=config.model)
 
     monkeypatch.setattr(
-        "clipper.pipeline.transcribe.whisperx_adapter.transcribe", fake_transcribe
+        "clippos.pipeline.transcribe.whisperx_adapter.transcribe", fake_transcribe
     )
 
     payload = run_transcription(video, workspace)
@@ -277,7 +277,7 @@ def test_run_transcription_reruns_when_cache_shape_is_wrong(
         return _fake_adapter_result(sample_transcript_payload, model=config.model)
 
     monkeypatch.setattr(
-        "clipper.pipeline.transcribe.whisperx_adapter.transcribe", fake_transcribe
+        "clippos.pipeline.transcribe.whisperx_adapter.transcribe", fake_transcribe
     )
 
     payload = run_transcription(video, workspace)

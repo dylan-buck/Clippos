@@ -1,7 +1,7 @@
 import pytest
 
-from clipper.pipeline.captions import build_caption_plan
-from clipper.pipeline.transcribe import (
+from clippos.pipeline.captions import build_caption_plan
+from clippos.pipeline.transcribe import (
     TranscriptSegment,
     TranscriptTimeline,
     TranscriptWord,

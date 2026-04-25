@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="${CLIPPER_REPO_URL:-https://github.com/dylan-buck/clipping-tool.git}"
-REF="${CLIPPER_REF:-main}"
-INSTALL_DIR="${CLIPPER_INSTALL_DIR:-$HOME/.local/share/clipping-tool}"
-HARNESS="${CLIPPER_HARNESS:-all}"
-EXTRAS="${CLIPPER_EXTRAS:-engine}"
+REPO_URL="${CLIPPOS_REPO_URL:-https://github.com/dylan-buck/Clippos.git}"
+REF="${CLIPPOS_REF:-main}"
+INSTALL_DIR="${CLIPPOS_INSTALL_DIR:-$HOME/.local/share/clippos}"
+HARNESS="${CLIPPOS_HARNESS:-all}"
+EXTRAS="${CLIPPOS_EXTRAS:-engine}"
 
 log() {
   printf '[clip install] %s\n' "$*"
@@ -24,13 +24,13 @@ python_in_supported_range() {
 }
 
 find_python() {
-  if [ -n "${CLIPPER_BOOTSTRAP_PYTHON:-}" ]; then
-    if python_in_supported_range "$CLIPPER_BOOTSTRAP_PYTHON"; then
-      printf '%s\n' "$CLIPPER_BOOTSTRAP_PYTHON"
+  if [ -n "${CLIPPOS_BOOTSTRAP_PYTHON:-}" ]; then
+    if python_in_supported_range "$CLIPPOS_BOOTSTRAP_PYTHON"; then
+      printf '%s\n' "$CLIPPOS_BOOTSTRAP_PYTHON"
       return
     fi
-    printf 'CLIPPER_BOOTSTRAP_PYTHON=%s does not satisfy 3.12.x\n' \
-      "$CLIPPER_BOOTSTRAP_PYTHON" >&2
+    printf 'CLIPPOS_BOOTSTRAP_PYTHON=%s does not satisfy 3.12.x\n' \
+      "$CLIPPOS_BOOTSTRAP_PYTHON" >&2
     exit 1
   fi
   for candidate in python3.12 python3 python; do
@@ -49,7 +49,7 @@ find_python() {
   printf '  Debian/Ubuntu: sudo apt install python3.12 python3.12-venv\n' >&2
   printf '  Arch:          sudo pacman -S python (currently 3.12.x)\n' >&2
   printf '\n' >&2
-  printf 'Or set CLIPPER_BOOTSTRAP_PYTHON=/path/to/python3.12 and re-run.\n' >&2
+  printf 'Or set CLIPPOS_BOOTSTRAP_PYTHON=/path/to/python3.12 and re-run.\n' >&2
   exit 1
 }
 
@@ -87,11 +87,11 @@ install_python_env() {
   fi
 }
 
-persist_clipper_root() {
-  # Pin CLIPPER_ROOT in the config file so the skill prologue can resolve
+persist_clippos_root() {
+  # Pin CLIPPOS_ROOT in the config file so the skill prologue can resolve
   # the install dir even when the harness does not propagate
   # CLAUDE_PLUGIN_ROOT / HERMES_SKILL_DIR (e.g. Claude Code issue #9354).
-  log "Persisting CLIPPER_ROOT to ~/.config/clipper-tool/.env"
+  log "Persisting CLIPPOS_ROOT to ~/.config/clippos/.env"
   "$INSTALL_DIR/.venv/bin/python" "$INSTALL_DIR/scripts/clip_skill.py" \
     config-write --root "$INSTALL_DIR"
 }
@@ -127,7 +127,7 @@ install_harness_links() {
       log "Skipping harness links"
       ;;
     *)
-      printf 'Unsupported CLIPPER_HARNESS=%s (use all, hermes, claude, codex, or none)\n' "$HARNESS" >&2
+      printf 'Unsupported CLIPPOS_HARNESS=%s (use all, hermes, claude, codex, or none)\n' "$HARNESS" >&2
       exit 2
       ;;
   esac
@@ -135,7 +135,7 @@ install_harness_links() {
 
 main() {
   if ! command -v git >/dev/null 2>&1; then
-    printf 'git is required to install clipping-tool\n' >&2
+    printf 'git is required to install Clippos\n' >&2
     exit 1
   fi
 
@@ -146,10 +146,10 @@ main() {
 
   checkout_repo
   install_python_env "$python_bin"
-  persist_clipper_root
+  persist_clippos_root
   install_harness_links
 
-  log "Installed clip skill at $INSTALL_DIR"
+  log "Installed Clippos at $INSTALL_DIR"
   log "First /clip run downloads ~3.5 GB of model weights (Whisper large-v3,"
   log "SpeechBrain ECAPA, RetinaFace, RAFT) and caches them locally."
   log "16 GB RAM is the practical floor; expect 3-5 min mining + 1-2 min"

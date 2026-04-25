@@ -6,13 +6,13 @@ allowed-tools: [Bash, Read, Write, AskUserQuestion]
 
 Invoke the `clip` skill with the user's arguments: $ARGUMENTS
 
-Resolve `CLIPPER_ROOT` with the prologue documented in `SKILL.md` (env var
+Resolve `CLIPPOS_ROOT` with the prologue documented in `SKILL.md` (env var
 > `HERMES_SKILL_DIR` > `CLAUDE_PLUGIN_ROOT` > `~/.hermes/skills/clip` >
 `~/.claude/skills/clip` > `~/.codex/skills/clip` >
-`~/.local/share/clipping-tool` > `CLIPPER_ROOT` line in
-`~/.config/clipper-tool/.env` > `$PWD`). Each candidate must contain
-`scripts/hermes_clip.py`. Then resolve `CLIPPER_PYTHON` to
-`$CLIPPER_ROOT/.venv/bin/python` when executable, otherwise `python3`.
+`~/.local/share/clippos` > `CLIPPOS_ROOT` line in
+`~/.config/clippos/.env` > `$PWD`). Each candidate must contain
+`scripts/hermes_clip.py`. Then resolve `CLIPPOS_PYTHON` to
+`$CLIPPOS_ROOT/.venv/bin/python` when executable, otherwise `python3`.
 
 Run the full loop: prepare the source, mine candidates, score every candidate
 with the harness model, write `scoring-response.json`, review, approve selected

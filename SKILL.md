@@ -28,11 +28,11 @@ Optional user intent:
 
 - Ratios: default all three (`9:16`, `1:1`, `16:9`). Respect explicit requests
   such as "vertical only", "square", "wide", or `--ratios 9:16,1:1`.
-- Clip count: default to config `CLIPPER_APPROVE_TOP` or 5. Treat 5 as the
+- Clip count: default to config `CLIPPOS_APPROVE_TOP` or 5. Treat 5 as the
   normal minimum when the video has enough valid candidate windows.
-- Quality threshold: default to config `CLIPPER_MIN_SCORE` or 0.70.
-- Output directory: default to config `CLIPPER_OUTPUT_DIR` or
-  `~/Documents/ClipperTool`.
+- Quality threshold: default to config `CLIPPOS_MIN_SCORE` or 0.70.
+- Output directory: default to config `CLIPPOS_OUTPUT_DIR` or
+  `~/Documents/Clippos`.
 
 If no video source is present, ask one short question for the video link or
 file path.
@@ -89,7 +89,7 @@ The skill learns from the user's own keep/skip choices. After every render,
 clips they actually posted (or plan to post) and record the answer:
 
 ```bash
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" feedback \
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" feedback \
   "$WORKSPACE" --kept c1,c4 --skipped c2,c3 --note c2='too long'
 ```
 
@@ -98,7 +98,7 @@ Or, for structured payloads from the harness, use `--json` and pipe
 stdin.
 
 Each feedback call writes `feedback-log.json` in the workspace and appends
-rows to the global `~/.config/clipper-tool/history.jsonl`. On the next clip
+rows to the global `~/.config/clippos/history.jsonl`. On the next clip
 run, `advance` attaches a `creator_patterns` section to the `score` and
 `package` handoff payloads. That section contains:
 
@@ -124,32 +124,32 @@ skill directory across harnesses:
 
 - **Hermes** substitutes `${HERMES_SKILL_DIR}`.
 - **Claude Code / Codex plugins** substitute `${CLAUDE_PLUGIN_ROOT}`.
-- **Any other harness** must either pin `CLIPPER_ROOT` directly or invoke the
+- **Any other harness** must either pin `CLIPPOS_ROOT` directly or invoke the
   prologue from inside the repo checkout so `$PWD` resolves correctly.
 
 ```bash
-# Resolve CLIPPER_ROOT — env var > harness substitution > known install
+# Resolve CLIPPOS_ROOT — env var > harness substitution > known install
 # locations > persisted config > $PWD. The candidate must contain
 # scripts/hermes_clip.py to be accepted.
 # Why so many fallbacks: Hermes substitutes HERMES_SKILL_DIR reliably, but
 # Claude Code's CLAUDE_PLUGIN_ROOT does not always expand inside command
 # bash blocks (Anthropic issue #9354), so we also probe the symlinks
-# install.sh creates and the persisted CLIPPER_ROOT in the config file.
-for candidate in "${CLIPPER_ROOT:-}" "${HERMES_SKILL_DIR:-}" "${CLAUDE_PLUGIN_ROOT:-}" \
+# install.sh creates and the persisted CLIPPOS_ROOT in the config file.
+for candidate in "${CLIPPOS_ROOT:-}" "${HERMES_SKILL_DIR:-}" "${CLAUDE_PLUGIN_ROOT:-}" \
                  "$HOME/.hermes/skills/clip" "$HOME/.claude/skills/clip" \
-                 "$HOME/.codex/skills/clip" "$HOME/.local/share/clipping-tool"; do
+                 "$HOME/.codex/skills/clip" "$HOME/.local/share/clippos"; do
   if [ -n "$candidate" ] && [ -f "$candidate/scripts/hermes_clip.py" ]; then
-    CLIPPER_ROOT="$candidate"; break
+    CLIPPOS_ROOT="$candidate"; break
   fi
 done
-if [ -z "${CLIPPER_ROOT:-}" ] && [ -f "$HOME/.config/clipper-tool/.env" ]; then
-  CLIPPER_ROOT="$(awk -F= '/^CLIPPER_ROOT=/{gsub(/^["'"'"']|["'"'"']$/,"",$2); print $2; exit}' "$HOME/.config/clipper-tool/.env")"
+if [ -z "${CLIPPOS_ROOT:-}" ] && [ -f "$HOME/.config/clippos/.env" ]; then
+  CLIPPOS_ROOT="$(awk -F= '/^CLIPPOS_ROOT=/{gsub(/^["'"'"']|["'"'"']$/,"",$2); print $2; exit}' "$HOME/.config/clippos/.env")"
 fi
-[ -n "${CLIPPER_ROOT:-}" ] && [ -f "$CLIPPER_ROOT/scripts/hermes_clip.py" ] || \
-  { [ -f "$PWD/scripts/hermes_clip.py" ] && CLIPPER_ROOT="$PWD"; }
-CLIPPER_PYTHON="${CLIPPER_PYTHON:-$CLIPPER_ROOT/.venv/bin/python}"
-[ -x "$CLIPPER_PYTHON" ] || CLIPPER_PYTHON="$(command -v python3)"
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-check
+[ -n "${CLIPPOS_ROOT:-}" ] && [ -f "$CLIPPOS_ROOT/scripts/hermes_clip.py" ] || \
+  { [ -f "$PWD/scripts/hermes_clip.py" ] && CLIPPOS_ROOT="$PWD"; }
+CLIPPOS_PYTHON="${CLIPPOS_PYTHON:-$CLIPPOS_ROOT/.venv/bin/python}"
+[ -x "$CLIPPOS_PYTHON" ] || CLIPPOS_PYTHON="$(command -v python3)"
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-check
 ```
 
 If discovery fails (no env var, no install symlinks, no persisted config,
@@ -157,8 +157,8 @@ not in the repo), persist the path once and every future invocation
 resolves cleanly:
 
 ```bash
-"$CLIPPER_ROOT/.venv/bin/python" "$CLIPPER_ROOT/scripts/clip_skill.py" \
-  config-write --root "$CLIPPER_ROOT"
+"$CLIPPOS_ROOT/.venv/bin/python" "$CLIPPOS_ROOT/scripts/clip_skill.py" \
+  config-write --root "$CLIPPOS_ROOT"
 ```
 
 `install.sh` runs that step automatically.
@@ -169,7 +169,7 @@ The skill ships with a zero-config open-source diarizer (silero-VAD +
 SpeechBrain ECAPA-TDNN + spectral clustering). No HuggingFace token, no
 license click-through. Models are public and auto-cache on first use.
 
-`CLIPPER_DIARIZER` (env var or `--diarizer` flag) chooses the path:
+`CLIPPOS_DIARIZER` (env var or `--diarizer` flag) chooses the path:
 
 - `speechbrain` (default) — open-source, no setup. Recommended.
 - `pyannote` — opt-in upgrade. Requires `HF_TOKEN` and one-time license
@@ -188,7 +188,7 @@ as missing but the run will succeed without it. Only ask the user for an
 HF token if they explicitly want the pyannote upgrade (see "Diarization"
 above).
 
-Every subsequent bash block assumes `CLIPPER_ROOT` and `CLIPPER_PYTHON` are
+Every subsequent bash block assumes `CLIPPOS_ROOT` and `CLIPPOS_PYTHON` are
 resolved with the same four-line prologue.
 
 ## Main Workflow (agent loop)
@@ -202,7 +202,7 @@ call plus (when needed) one model handoff.
 1. Start or resume a job:
 
 ```bash
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" advance --source "$SOURCE"
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" advance --source "$SOURCE"
 ```
 
 Use `--ratios 9:16,1:1` or `--clips 2` only when the user asks. The payload
@@ -252,7 +252,7 @@ in the job).
 - Re-run advance on the workspace:
 
 ```bash
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE"
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE"
 ```
 
   Advance builds the review manifest, auto-approves the top-scoring clips
@@ -273,7 +273,7 @@ in the job).
 ### Deterministic fallback (raw primitives)
 
 If the harness cannot use `hermes_clip.py`, the older step-by-step flow still
-works. Run `prepare` → `clipper.cli run --stage mine` → score → `--stage
+works. Run `prepare` → `clippos.cli run --stage mine` → score → `--stage
 review` → `clip_skill.py approve` → `--stage render` → `clip_skill.py outputs`.
 See git history for the long form; `hermes_clip.py` encodes the same sequence.
 
@@ -288,8 +288,8 @@ and packaging handoff; it uses the newest job workspace when none is given.
    packaging:
 
 ```bash
-WORKSPACE=$("$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" latest-workspace --plain)
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE" --package
+WORKSPACE=$("$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" latest-workspace --plain)
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE" --package
 ```
 
 2. When `next_action == "package"`:
@@ -307,7 +307,7 @@ WORKSPACE=$("$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" latest-work
 - Re-run advance:
 
 ```bash
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE"
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE"
 ```
 
 3. When `next_action == "done-package"`, the payload includes `clips[]` with
@@ -318,11 +318,11 @@ WORKSPACE=$("$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" latest-work
 ## Config Workflow
 
 Use `/clip config` when setup is missing or the user wants defaults changed.
-The helper stores config at `~/.config/clipper-tool/.env`:
+The helper stores config at `~/.config/clippos/.env`:
 
 ```bash
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-write \
-  --output-dir "$HOME/Documents/ClipperTool" \
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-write \
+  --output-dir "$HOME/Documents/Clippos" \
   --ratios "9:16,1:1,16:9" \
   --max-candidates 12 \
   --approve-top 5 \

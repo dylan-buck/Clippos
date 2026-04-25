@@ -6,13 +6,13 @@ allowed-tools: [Bash, Read, Write]
 
 Invoke the `clip` skill's packaging workflow for: $ARGUMENTS
 
-Resolve `CLIPPER_ROOT` with the prologue documented in `SKILL.md` (env var
+Resolve `CLIPPOS_ROOT` with the prologue documented in `SKILL.md` (env var
 > `HERMES_SKILL_DIR` > `CLAUDE_PLUGIN_ROOT` > `~/.hermes/skills/clip` >
 `~/.claude/skills/clip` > `~/.codex/skills/clip` >
-`~/.local/share/clipping-tool` > `CLIPPER_ROOT` line in
-`~/.config/clipper-tool/.env` > `$PWD`). Each candidate must contain
-`scripts/hermes_clip.py`. Then resolve `CLIPPER_PYTHON` to
-`$CLIPPER_ROOT/.venv/bin/python` when executable, otherwise `python3`.
+`~/.local/share/clippos` > `CLIPPOS_ROOT` line in
+`~/.config/clippos/.env` > `$PWD`). Each candidate must contain
+`scripts/hermes_clip.py`. Then resolve `CLIPPOS_PYTHON` to
+`$CLIPPOS_ROOT/.venv/bin/python` when executable, otherwise `python3`.
 
 Resolve the target workspace (either the argument, or the most recent
 `skill-jobs/*/jobs/<job_id>/` directory under the configured output dir). Then:

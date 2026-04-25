@@ -5,16 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from clipper.adapters.storage import write_json
-from clipper.models.candidate import CandidateClip
-from clipper.models.package import (
+from clippos.adapters.storage import write_json
+from clippos.models.candidate import CandidateClip
+from clippos.models.package import (
     PACKAGE_PROMPT_VERSION,
     PackageResponse,
     PublishPack,
 )
-from clipper.models.review import ReviewManifest
-from clipper.models.scoring import ClipBrief, MiningSignals, ScoringRequest
-from clipper.pipeline.packaging import (
+from clippos.models.review import ReviewManifest
+from clippos.models.scoring import ClipBrief, MiningSignals, ScoringRequest
+from clippos.pipeline.packaging import (
     PACKAGE_REPORT_FILENAME,
     PACKAGE_REQUEST_FILENAME,
     PACKAGE_RESPONSE_FILENAME,

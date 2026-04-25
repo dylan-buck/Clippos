@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from clipper.models.job import ClipperJob
+from clippos.models.job import ClipposJob
 
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -33,13 +33,13 @@ def sample_face_payload() -> dict:
 
 
 @pytest.fixture
-def sample_job(tmp_path: Path, sample_job_payload: dict) -> ClipperJob:
+def sample_job(tmp_path: Path, sample_job_payload: dict) -> ClipposJob:
     video_path = tmp_path / Path(sample_job_payload["video_path"]).name
     output_dir = tmp_path / Path(sample_job_payload["output_dir"]).name
     video_path.write_bytes(b"fake")
     output_dir.mkdir()
 
-    job = ClipperJob(
+    job = ClipposJob(
         **{
             **sample_job_payload,
             "video_path": video_path,

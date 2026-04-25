@@ -20,7 +20,7 @@ the harness writes back into the workspace.
   resolved scores are not yet available the command stops at the mine stage and
   returns the request path instead of raising.
 
-The CLI mirrors the stage flag: `python -m clipper.cli run job.json --stage mine`.
+The CLI mirrors the stage flag: `python -m clippos.cli run job.json --stage mine`.
 
 ## Workspace artifacts
 

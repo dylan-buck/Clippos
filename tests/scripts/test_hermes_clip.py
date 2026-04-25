@@ -749,7 +749,7 @@ def test_latest_workspace_delegates_to_clip_skill(tmp_path: Path) -> None:
     output_dir = tmp_path / "out"
     workspace = output_dir / "jobs" / "job-a"
     workspace.mkdir(parents=True)
-    clip_skill.write_env_file(config_path, {"CLIPPER_OUTPUT_DIR": str(output_dir)})
+    clip_skill.write_env_file(config_path, {"CLIPPOS_OUTPUT_DIR": str(output_dir)})
 
     result = _run(["latest-workspace", "--config", str(config_path)])
 

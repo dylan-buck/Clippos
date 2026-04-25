@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from clipper.adapters.one_euro import OneEuroFilter
+from clippos.adapters.one_euro import OneEuroFilter
 
 
 def test_one_euro_returns_first_value_verbatim() -> None:

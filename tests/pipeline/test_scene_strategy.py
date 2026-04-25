@@ -1,7 +1,7 @@
 import pytest
 
-from clipper.pipeline.scene_strategy import derive_clip_mode
-from clipper.pipeline.vision import FaceBox, VisionFrame, VisionTimeline
+from clippos.pipeline.scene_strategy import derive_clip_mode
+from clippos.pipeline.vision import FaceBox, VisionFrame, VisionTimeline
 
 
 def _face(center_x: float = 0.5, center_y: float = 0.5) -> FaceBox:

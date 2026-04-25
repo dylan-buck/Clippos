@@ -1,6 +1,6 @@
 # Job Spec
 
-`ClipperJob` is the stable handoff contract for the current local pipeline. It
+`ClipposJob` is the stable handoff contract for the current local pipeline. It
 defines the source video, destination directory, review gate, output profile, and
 candidate cap used by ingest and review-manifest generation. All contract models
 reject unexpected fields to keep handoffs explicit and stable.

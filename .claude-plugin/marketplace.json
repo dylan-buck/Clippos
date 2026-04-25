@@ -1,6 +1,6 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "clipping-tool",
+  "name": "clippos",
   "description": "Local video clipping skill for analyzing, scoring, approving, and rendering social clips.",
   "owner": {
     "name": "Dylan Buck",
@@ -17,7 +17,7 @@
       },
       "source": "./",
       "category": "productivity",
-      "homepage": "https://github.com/dylan-buck/clipping-tool"
+      "homepage": "https://github.com/dylan-buck/Clippos"
     }
   ]
 }

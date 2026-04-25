@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from clipper.adapters import vision as vision_adapter
-from clipper.adapters.vision import (
+from clippos.adapters import vision as vision_adapter
+from clippos.adapters.vision import (
     DEFAULT_MODEL,
     FrameSample,
     RawFace,
@@ -19,18 +19,18 @@ from clipper.adapters.vision import (
     select_primary_face,
     smooth_face_trajectory,
 )
-from clipper.pipeline.vision import build_vision_timeline
+from clippos.pipeline.vision import build_vision_timeline
 
 
-def test_clipper_package_sets_legacy_keras_env_at_import_time() -> None:
-    """The TF_USE_LEGACY_KERAS opt-in lives in clipper/__init__.py so it
+def test_clippos_package_sets_legacy_keras_env_at_import_time() -> None:
+    """The TF_USE_LEGACY_KERAS opt-in lives in clippos/__init__.py so it
     runs before whisperx → pytorch-lightning eagerly imports TensorFlow
     on the first checkpoint load. Without this, RetinaFace.build_model()
     raises a Keras-3/TF compatibility error mid-pipeline.
     """
     import os
 
-    import clipper  # noqa: F401 — importing it is the point
+    import clippos  # noqa: F401 — importing it is the point
 
     assert os.environ.get("TF_USE_LEGACY_KERAS") == "1"
 
@@ -248,15 +248,15 @@ def test_analyze_composes_pipeline_stages(
         calls["motion.count"] = len(samples_in)
         return motions
 
-    monkeypatch.setattr("clipper.adapters.vision._sample_frames", fake_sample_frames)
+    monkeypatch.setattr("clippos.adapters.vision._sample_frames", fake_sample_frames)
     monkeypatch.setattr(
-        "clipper.adapters.vision._detect_shot_changes", fake_detect_shots
+        "clippos.adapters.vision._detect_shot_changes", fake_detect_shots
     )
     monkeypatch.setattr(
-        "clipper.adapters.vision._detect_faces_per_frame", fake_detect_faces
+        "clippos.adapters.vision._detect_faces_per_frame", fake_detect_faces
     )
     monkeypatch.setattr(
-        "clipper.adapters.vision._compute_motion_per_frame", fake_motion
+        "clippos.adapters.vision._compute_motion_per_frame", fake_motion
     )
 
     result = analyze(video, config=VisionConfig(sample_fps=4.0, scene_threshold=30.0))
@@ -279,7 +279,7 @@ def test_analyze_raises_when_no_samples_available(
     video.write_bytes(b"fake")
 
     monkeypatch.setattr(
-        "clipper.adapters.vision._sample_frames", lambda path, config: []
+        "clippos.adapters.vision._sample_frames", lambda path, config: []
     )
 
     with pytest.raises(VisionError):

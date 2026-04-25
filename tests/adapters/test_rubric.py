@@ -1,4 +1,4 @@
-from clipper.adapters.rubric import (
+from clippos.adapters.rubric import (
     RUBRIC_PROMPT,
     RUBRIC_VERSION,
     build_response_schema,

@@ -5,12 +5,12 @@ import sys
 import pytest
 from typer.testing import CliRunner
 
-from clipper import __version__
-from clipper.adapters.ffmpeg_render import FFmpegRenderError
-from clipper.cli import app
-from clipper.pipeline.brief import BriefResponseError
-from clipper.pipeline.orchestrator import RenderStageError
-from clipper.pipeline.scoring import ScoringResponseError
+from clippos import __version__
+from clippos.adapters.ffmpeg_render import FFmpegRenderError
+from clippos.cli import app
+from clippos.pipeline.brief import BriefResponseError
+from clippos.pipeline.orchestrator import RenderStageError
+from clippos.pipeline.scoring import ScoringResponseError
 
 
 @pytest.fixture
@@ -31,19 +31,19 @@ def test_version_command_prints_package_version() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert result.stdout == f"clipper-tool {__version__}\n"
+    assert result.stdout == f"clippos {__version__}\n"
 
 
 def test_module_invocation_prints_package_version() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "clipper.cli", "version"],
+        [sys.executable, "-m", "clippos.cli", "version"],
         capture_output=True,
         check=False,
         text=True,
     )
 
     assert result.returncode == 0
-    assert result.stdout == f"clipper-tool {__version__}\n"
+    assert result.stdout == f"clippos {__version__}\n"
 
 
 def test_run_command_prints_manifest_path(
@@ -55,7 +55,7 @@ def test_run_command_prints_manifest_path(
     job_path = tmp_path / "job.json"
     job_path.write_text(json.dumps(sample_job_payload), encoding="utf-8")
     monkeypatch.setattr(
-        "clipper.cli.run_job",
+        "clippos.cli.run_job",
         lambda _job, *, stage: tmp_path / "review-manifest.json",
     )
 
@@ -79,7 +79,7 @@ def test_run_command_forwards_stage_flag(
 
     job_path = tmp_path / "job.json"
     job_path.write_text(json.dumps(sample_job_payload), encoding="utf-8")
-    monkeypatch.setattr("clipper.cli.run_job", fake_run_job)
+    monkeypatch.setattr("clippos.cli.run_job", fake_run_job)
 
     result = cli_runner.invoke(app, ["run", str(job_path), "--stage", "mine"])
 
@@ -101,7 +101,7 @@ def test_run_command_defaults_stage_to_auto(
 
     job_path = tmp_path / "job.json"
     job_path.write_text(json.dumps(sample_job_payload), encoding="utf-8")
-    monkeypatch.setattr("clipper.cli.run_job", fake_run_job)
+    monkeypatch.setattr("clippos.cli.run_job", fake_run_job)
 
     result = cli_runner.invoke(app, ["run", str(job_path)])
 
@@ -135,7 +135,7 @@ def test_run_command_forwards_render_stage(
 
     job_path = tmp_path / "job.json"
     job_path.write_text(json.dumps(sample_job_payload), encoding="utf-8")
-    monkeypatch.setattr("clipper.cli.run_job", fake_run_job)
+    monkeypatch.setattr("clippos.cli.run_job", fake_run_job)
 
     result = cli_runner.invoke(app, ["run", str(job_path), "--stage", "render"])
 
@@ -155,7 +155,7 @@ def test_run_command_surfaces_render_stage_errors(
     def exploding_run(_job, *, stage: str):
         raise RenderStageError("no review manifest")
 
-    monkeypatch.setattr("clipper.cli.run_job", exploding_run)
+    monkeypatch.setattr("clippos.cli.run_job", exploding_run)
 
     result = cli_runner.invoke(app, ["run", str(job_path), "--stage", "render"])
 
@@ -176,7 +176,7 @@ def test_run_command_surfaces_ffmpeg_render_errors(
     def exploding_run(_job, *, stage: str):
         raise FFmpegRenderError("ffmpeg exited 1")
 
-    monkeypatch.setattr("clipper.cli.run_job", exploding_run)
+    monkeypatch.setattr("clippos.cli.run_job", exploding_run)
 
     result = cli_runner.invoke(app, ["run", str(job_path), "--stage", "render"])
 
@@ -197,7 +197,7 @@ def test_run_command_surfaces_scoring_response_errors(
     def exploding_run(_job, *, stage: str):
         raise ScoringResponseError("response is malformed")
 
-    monkeypatch.setattr("clipper.cli.run_job", exploding_run)
+    monkeypatch.setattr("clippos.cli.run_job", exploding_run)
 
     result = cli_runner.invoke(app, ["run", str(job_path)])
 
@@ -218,7 +218,7 @@ def test_run_command_surfaces_brief_response_errors(
     def exploding_run(_job, *, stage: str):
         raise BriefResponseError("brief is malformed")
 
-    monkeypatch.setattr("clipper.cli.run_job", exploding_run)
+    monkeypatch.setattr("clippos.cli.run_job", exploding_run)
 
     result = cli_runner.invoke(app, ["run", str(job_path), "--stage", "brief"])
 

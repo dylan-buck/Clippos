@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from clipper.pipeline import creator_profile as cp
+from clippos.pipeline import creator_profile as cp
 
 
 def _entry(

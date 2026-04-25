@@ -19,10 +19,10 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from clipper.models.job import ClipperJob  # noqa: E402
-from clipper.models.review import ReviewManifest  # noqa: E402
-from clipper.pipeline import creator_profile  # noqa: E402
-from clipper.pipeline.packaging import (  # noqa: E402
+from clippos.models.job import ClipposJob  # noqa: E402
+from clippos.models.review import ReviewManifest  # noqa: E402
+from clippos.pipeline import creator_profile  # noqa: E402
+from clippos.pipeline.packaging import (  # noqa: E402
     PackagingResponseError,
     briefs_for_approved_candidates,
     build_package_request,
@@ -33,14 +33,14 @@ from clipper.pipeline.packaging import (  # noqa: E402
     write_package_request,
     write_pack_artifacts,
 )
-from clipper.pipeline.render import clip_render_dir  # noqa: E402
-from clipper.pipeline.scoring import load_scoring_request  # noqa: E402
+from clippos.pipeline.render import clip_render_dir  # noqa: E402
+from clippos.pipeline.scoring import load_scoring_request  # noqa: E402
 
-CONFIG_PATH = Path("~/.config/clipper-tool/.env").expanduser()
-DEFAULT_HISTORY_PATH = Path("~/.config/clipper-tool/history.jsonl").expanduser()
+CONFIG_PATH = Path("~/.config/clippos/.env").expanduser()
+DEFAULT_HISTORY_PATH = Path("~/.config/clippos/history.jsonl").expanduser()
 FEEDBACK_LOG_FILENAME = "feedback-log.json"
 VALID_RATIOS = ("9:16", "1:1", "16:9")
-DEFAULT_OUTPUT_DIR = Path("~/Documents/ClipperTool").expanduser()
+DEFAULT_OUTPUT_DIR = Path("~/Documents/Clippos").expanduser()
 DEFAULT_MAX_CANDIDATES = 12
 DEFAULT_APPROVE_TOP = 5
 DEFAULT_MIN_SCORE = 0.70
@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Helper commands for the clipper agent skill."
+        description="Helper commands for the Clippos agent skill."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -76,7 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--hf-token",
         help=(
             "Hugging Face token; only needed to opt into pyannote "
-            "diarization (CLIPPER_DIARIZER=pyannote). The default "
+            "diarization (CLIPPOS_DIARIZER=pyannote). The default "
             "open-source diarizer works without a token."
         ),
     )
@@ -88,7 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--root",
         type=Path,
         help=(
-            "Persist CLIPPER_ROOT (the absolute path to the clipper-tool "
+            "Persist CLIPPOS_ROOT (the absolute path to the Clippos "
             "checkout) so the skill prologue can resolve it even when the "
             "harness does not set CLAUDE_PLUGIN_ROOT or HERMES_SKILL_DIR. "
             "install.sh calls this automatically; set it manually for dev "
@@ -197,7 +197,7 @@ def cmd_config_check(args: argparse.Namespace) -> int:
         "ffmpeg_filters": {
             "ass": ass_available,
         },
-        # The render stage now goes through clipper.adapters.ffmpeg_resolver
+        # The render stage now goes through clippos.adapters.ffmpeg_resolver
         # which auto-falls-back to the vendored static-ffmpeg binary when
         # the system ffmpeg lacks libass. Surface the resolution outcome so
         # users can see whether render will use their system build or
@@ -209,8 +209,8 @@ def cmd_config_check(args: argparse.Namespace) -> int:
         # not-ready signal with an install hint.
         "engine_imports": engine_status,
         "env": {
-            "CLIPPER_OUTPUT_DIR": bool(config.get("CLIPPER_OUTPUT_DIR")),
-            "CLIPPER_RATIOS": bool(config.get("CLIPPER_RATIOS")),
+            "CLIPPOS_OUTPUT_DIR": bool(config.get("CLIPPOS_OUTPUT_DIR")),
+            "CLIPPOS_RATIOS": bool(config.get("CLIPPOS_RATIOS")),
         },
         # HF_TOKEN moved out of `env` to make explicit that it is no longer
         # required. The default diarizer is the open-source SpeechBrain
@@ -220,7 +220,7 @@ def cmd_config_check(args: argparse.Namespace) -> int:
                 "available": bool(resolve_hf_token(config)),
                 "enables": (
                     "pyannote/speaker-diarization-3.1 "
-                    "(set CLIPPER_DIARIZER=pyannote)"
+                    "(set CLIPPOS_DIARIZER=pyannote)"
                 ),
             },
         },
@@ -325,7 +325,7 @@ def probe_render_ffmpeg() -> dict[str, object]:
     Never raises — preflight surfaces should report status, not crash.
     """
     try:
-        from clipper.adapters.ffmpeg_resolver import probe_ffmpeg
+        from clippos.adapters.ffmpeg_resolver import probe_ffmpeg
     except ImportError as exc:  # engine extras not installed
         return {
             "ready": False,
@@ -358,35 +358,35 @@ def probe_render_ffmpeg() -> dict[str, object]:
 def cmd_config_write(args: argparse.Namespace) -> int:
     values: dict[str, str] = {}
     if args.output_dir is not None:
-        values["CLIPPER_OUTPUT_DIR"] = str(args.output_dir.expanduser())
+        values["CLIPPOS_OUTPUT_DIR"] = str(args.output_dir.expanduser())
     if args.hf_token:
         values["HF_TOKEN"] = args.hf_token
     if args.ratios:
-        values["CLIPPER_RATIOS"] = ",".join(parse_ratios(args.ratios))
+        values["CLIPPOS_RATIOS"] = ",".join(parse_ratios(args.ratios))
     if args.max_candidates is not None:
         if args.max_candidates <= 0:
-            raise ValueError("CLIPPER_MAX_CANDIDATES must be positive")
-        values["CLIPPER_MAX_CANDIDATES"] = str(args.max_candidates)
+            raise ValueError("CLIPPOS_MAX_CANDIDATES must be positive")
+        values["CLIPPOS_MAX_CANDIDATES"] = str(args.max_candidates)
     if args.approve_top is not None:
         if args.approve_top <= 0:
-            raise ValueError("CLIPPER_APPROVE_TOP must be positive")
-        values["CLIPPER_APPROVE_TOP"] = str(args.approve_top)
+            raise ValueError("CLIPPOS_APPROVE_TOP must be positive")
+        values["CLIPPOS_APPROVE_TOP"] = str(args.approve_top)
     if args.min_score is not None:
         if args.min_score < 0 or args.min_score > 1:
-            raise ValueError("CLIPPER_MIN_SCORE must be between 0 and 1")
-        values["CLIPPER_MIN_SCORE"] = f"{args.min_score:.2f}"
+            raise ValueError("CLIPPOS_MIN_SCORE must be between 0 and 1")
+        values["CLIPPOS_MIN_SCORE"] = f"{args.min_score:.2f}"
     if args.root is not None:
-        # Validate the path actually points at a clipper-tool checkout
+        # Validate the path actually points at a Clippos checkout
         # before persisting it — otherwise the prologue would happily
         # resolve a bogus value and fail later with a confusing error.
         resolved_root = args.root.expanduser().resolve()
         marker = resolved_root / "scripts" / "hermes_clip.py"
         if not marker.is_file():
             raise ValueError(
-                f"--root must point to a clipper-tool checkout (looked for "
+                f"--root must point to a Clippos checkout (looked for "
                 f"{marker}; not found)"
             )
-        values["CLIPPER_ROOT"] = str(resolved_root)
+        values["CLIPPOS_ROOT"] = str(resolved_root)
 
     existing = read_env_file(args.config)
     existing.update(values)
@@ -402,21 +402,21 @@ def cmd_config_write(args: argparse.Namespace) -> int:
 def cmd_prepare(args: argparse.Namespace) -> int:
     config = merged_config(args.config)
     output_dir = resolve_output_dir(args.output_dir, config)
-    ratios = parse_ratios(args.ratios or config.get("CLIPPER_RATIOS", "all"))
+    ratios = parse_ratios(args.ratios or config.get("CLIPPOS_RATIOS", "all"))
     max_candidates = resolve_positive_int(
         args.max_candidates,
-        config.get("CLIPPER_MAX_CANDIDATES"),
+        config.get("CLIPPOS_MAX_CANDIDATES"),
         DEFAULT_MAX_CANDIDATES,
         "max candidates",
     )
     approve_top = resolve_positive_int(
         None,
-        config.get("CLIPPER_APPROVE_TOP"),
+        config.get("CLIPPOS_APPROVE_TOP"),
         DEFAULT_APPROVE_TOP,
         "approve top",
     )
     min_score = resolve_score(
-        config.get("CLIPPER_MIN_SCORE"),
+        config.get("CLIPPOS_MIN_SCORE"),
         DEFAULT_MIN_SCORE,
     )
 
@@ -433,7 +433,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         },
         "max_candidates": max_candidates,
     }
-    job = ClipperJob.model_validate(payload)
+    job = ClipposJob.model_validate(payload)
     job_path.write_text(
         json.dumps(job.model_dump(mode="json"), indent=2), encoding="utf-8"
     )
@@ -848,11 +848,11 @@ def write_env_file(path: Path, values: dict[str, str]) -> None:
 def merged_config(path: Path) -> dict[str, str]:
     config = read_env_file(path)
     for key in (
-        "CLIPPER_OUTPUT_DIR",
-        "CLIPPER_RATIOS",
-        "CLIPPER_MAX_CANDIDATES",
-        "CLIPPER_APPROVE_TOP",
-        "CLIPPER_MIN_SCORE",
+        "CLIPPOS_OUTPUT_DIR",
+        "CLIPPOS_RATIOS",
+        "CLIPPOS_MAX_CANDIDATES",
+        "CLIPPOS_APPROVE_TOP",
+        "CLIPPOS_MIN_SCORE",
         "HF_TOKEN",
         "HUGGING_FACE_HUB_TOKEN",
         "HUGGINGFACE_HUB_TOKEN",
@@ -865,20 +865,20 @@ def merged_config(path: Path) -> dict[str, str]:
 def resolved_defaults(config: dict[str, str]) -> dict[str, object]:
     return {
         "output_dir": str(resolve_output_dir(None, config)),
-        "ratios": parse_ratios(config.get("CLIPPER_RATIOS", "all")),
+        "ratios": parse_ratios(config.get("CLIPPOS_RATIOS", "all")),
         "max_candidates": resolve_positive_int(
             None,
-            config.get("CLIPPER_MAX_CANDIDATES"),
+            config.get("CLIPPOS_MAX_CANDIDATES"),
             DEFAULT_MAX_CANDIDATES,
             "max candidates",
         ),
         "approve_top": resolve_positive_int(
             None,
-            config.get("CLIPPER_APPROVE_TOP"),
+            config.get("CLIPPOS_APPROVE_TOP"),
             DEFAULT_APPROVE_TOP,
             "approve top",
         ),
-        "min_score": resolve_score(config.get("CLIPPER_MIN_SCORE"), DEFAULT_MIN_SCORE),
+        "min_score": resolve_score(config.get("CLIPPOS_MIN_SCORE"), DEFAULT_MIN_SCORE),
     }
 
 
@@ -931,7 +931,7 @@ def parse_ratios(raw: str) -> list[str]:
 
 
 def resolve_output_dir(value: Path | None, config: dict[str, str]) -> Path:
-    raw = value or Path(config.get("CLIPPER_OUTPUT_DIR", str(DEFAULT_OUTPUT_DIR)))
+    raw = value or Path(config.get("CLIPPOS_OUTPUT_DIR", str(DEFAULT_OUTPUT_DIR)))
     return Path(raw).expanduser().resolve()
 
 

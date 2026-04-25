@@ -3,15 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from clipper.models.job import ClipperJob
-from clipper.models.render import RenderManifest
-from clipper.pipeline.orchestrator import (
+from clippos.models.job import ClipposJob
+from clippos.models.render import RenderManifest
+from clippos.pipeline.orchestrator import (
     RENDER_REPORT_FILENAME,
     REVIEW_MANIFEST_FILENAME,
     RenderStageError,
     run_job,
 )
-from clipper.pipeline.scoring import (
+from clippos.pipeline.scoring import (
     SCORING_REQUEST_FILENAME,
     ScoringResponseError,
 )
@@ -57,7 +57,7 @@ def _patch_pipeline_stages(
     monkeypatch: pytest.MonkeyPatch, observed_paths: list[Path]
 ) -> None:
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.probe_video",
+        "clippos.pipeline.orchestrator.probe_video",
         lambda path: (
             observed_paths.append(path)
             or {
@@ -70,17 +70,17 @@ def _patch_pipeline_stages(
         ),
     )
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.transcribe_video",
+        "clippos.pipeline.orchestrator.transcribe_video",
         lambda path, workspace: observed_paths.append(path) or MOCK_TRANSCRIPT,
     )
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.analyze_video",
+        "clippos.pipeline.orchestrator.analyze_video",
         lambda path, workspace: observed_paths.append(path) or MOCK_VISION,
     )
 
 
 def test_run_job_auto_stage_returns_review_manifest_when_scorer_resolves(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     expected_video_path = (Path.cwd() / sample_job.video_path).resolve(strict=False)
@@ -97,7 +97,7 @@ def test_run_job_auto_stage_returns_review_manifest_when_scorer_resolves(
         }
     ]
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.score_shortlist",
+        "clippos.pipeline.orchestrator.score_shortlist",
         lambda _workspace: mock_model_scores,
     )
 
@@ -119,7 +119,7 @@ def test_run_job_auto_stage_returns_review_manifest_when_scorer_resolves(
 
 
 def test_run_job_auto_stage_returns_scoring_request_when_no_scores_available(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     observed_paths: list[Path] = []
@@ -132,7 +132,7 @@ def test_run_job_auto_stage_returns_scoring_request_when_no_scores_available(
 
 
 def test_run_job_mine_stage_writes_scoring_request_and_skips_review(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     observed_paths: list[Path] = []
@@ -144,7 +144,7 @@ def test_run_job_mine_stage_writes_scoring_request_and_skips_review(
         score_shortlist_calls.append(workspace)
         raise AssertionError("score_shortlist should not run during mine-only stage")
 
-    monkeypatch.setattr("clipper.pipeline.orchestrator.score_shortlist", _explode)
+    monkeypatch.setattr("clippos.pipeline.orchestrator.score_shortlist", _explode)
 
     artifact_path = run_job(sample_job, stage="mine")
 
@@ -154,11 +154,11 @@ def test_run_job_mine_stage_writes_scoring_request_and_skips_review(
 
 
 def test_run_job_review_stage_raises_when_no_scoring_context_exists(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.probe_video",
+        "clippos.pipeline.orchestrator.probe_video",
         lambda _path: {
             "duration_seconds": 120.0,
             "width": 1920,
@@ -173,7 +173,7 @@ def test_run_job_review_stage_raises_when_no_scoring_context_exists(
 
 
 def test_run_job_review_stage_builds_manifest_from_existing_scoring_artifacts(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     observed_paths: list[Path] = []
@@ -192,7 +192,7 @@ def test_run_job_review_stage_builds_manifest_from_existing_scoring_artifacts(
         }
     ]
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.score_shortlist",
+        "clippos.pipeline.orchestrator.score_shortlist",
         lambda _workspace: mock_model_scores,
     )
 
@@ -204,13 +204,13 @@ def test_run_job_review_stage_builds_manifest_from_existing_scoring_artifacts(
     assert manifest["candidates"][0]["score"] == 0.72
 
 
-def test_run_job_rejects_unknown_stage(sample_job: ClipperJob) -> None:
+def test_run_job_rejects_unknown_stage(sample_job: ClipposJob) -> None:
     with pytest.raises(ValueError):
         run_job(sample_job, stage="publish")  # type: ignore[arg-type]
 
 
 def _prime_review_manifest(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
     observed_paths: list[Path] = []
     _patch_pipeline_stages(monkeypatch, observed_paths)
@@ -225,7 +225,7 @@ def _prime_review_manifest(
         }
     ]
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.score_shortlist",
+        "clippos.pipeline.orchestrator.score_shortlist",
         lambda _workspace: mock_model_scores,
     )
     return run_job(sample_job, stage="review")
@@ -241,7 +241,7 @@ def _approve_candidates(
 
 
 def test_run_job_render_stage_without_review_manifest_raises(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     _patch_pipeline_stages(monkeypatch, [])
@@ -251,7 +251,7 @@ def test_run_job_render_stage_without_review_manifest_raises(
 
 
 def test_run_job_render_stage_without_approved_candidates_raises(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     review_manifest_path = _prime_review_manifest(sample_job, monkeypatch)
@@ -260,14 +260,14 @@ def test_run_job_render_stage_without_approved_candidates_raises(
     def _explode(_manifest: RenderManifest) -> list:
         raise AssertionError("render should not be invoked without approvals")
 
-    monkeypatch.setattr("clipper.pipeline.orchestrator.render_clip", _explode)
+    monkeypatch.setattr("clippos.pipeline.orchestrator.render_clip", _explode)
 
     with pytest.raises(RenderStageError, match="no approved candidates"):
         run_job(sample_job, stage="render")
 
 
 def test_run_job_render_stage_writes_report_and_invokes_renderer(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     review_manifest_path = _prime_review_manifest(sample_job, monkeypatch)
@@ -282,7 +282,7 @@ def test_run_job_render_stage_writes_report_and_invokes_renderer(
         rendered_manifests.append(manifest)
         return []
 
-    monkeypatch.setattr("clipper.pipeline.orchestrator.render_clip", fake_render_clip)
+    monkeypatch.setattr("clippos.pipeline.orchestrator.render_clip", fake_render_clip)
 
     report_path = run_job(sample_job, stage="render")
     report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -298,7 +298,7 @@ def test_run_job_render_stage_writes_report_and_invokes_renderer(
 
 
 def test_run_job_render_stage_honors_job_output_ratios(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     one_ratio_job = sample_job.model_copy(
@@ -315,7 +315,7 @@ def test_run_job_render_stage_honors_job_output_ratios(
 
     rendered_manifests: list[RenderManifest] = []
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.render_clip",
+        "clippos.pipeline.orchestrator.render_clip",
         lambda manifest: rendered_manifests.append(manifest) or [],
     )
 
@@ -328,12 +328,12 @@ def test_run_job_render_stage_honors_job_output_ratios(
 
 
 def test_run_job_auto_stage_does_not_chain_into_render(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     _patch_pipeline_stages(monkeypatch, [])
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.score_shortlist",
+        "clippos.pipeline.orchestrator.score_shortlist",
         lambda _workspace: [
             {
                 "clip_id": "clip-000",
@@ -348,7 +348,7 @@ def test_run_job_auto_stage_does_not_chain_into_render(
     def _explode(_manifest: RenderManifest) -> list:
         raise AssertionError("auto stage must not invoke the renderer")
 
-    monkeypatch.setattr("clipper.pipeline.orchestrator.render_clip", _explode)
+    monkeypatch.setattr("clippos.pipeline.orchestrator.render_clip", _explode)
 
     artifact_path = run_job(sample_job)
     assert artifact_path.name == REVIEW_MANIFEST_FILENAME
@@ -358,7 +358,7 @@ def test_run_job_auto_stage_does_not_chain_into_render(
 
 
 def test_mine_stage_writes_brief_request_when_video_brief_enabled(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Mine + video_brief=True writes BOTH scoring-request.json and
     brief-request.json so the harness state machine can pick up the
@@ -384,7 +384,7 @@ def test_mine_stage_writes_brief_request_when_video_brief_enabled(
 
 
 def test_mine_stage_skips_brief_request_when_video_brief_disabled(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """video_brief=False (the test fixture default) preserves the
     legacy mine flow — no brief-request.json is written."""
@@ -399,7 +399,7 @@ def test_mine_stage_skips_brief_request_when_video_brief_disabled(
 
 
 def test_auto_stage_pauses_for_brief_when_brief_enabled_and_unauthored(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Auto must NOT proceed to scoring when video_brief is enabled
     but the harness has not yet authored brief-response.json. Returns
@@ -415,7 +415,7 @@ def test_auto_stage_pauses_for_brief_when_brief_enabled_and_unauthored(
             "score_shortlist must not run while waiting on the brief handoff"
         )
 
-    monkeypatch.setattr("clipper.pipeline.orchestrator.score_shortlist", _explode)
+    monkeypatch.setattr("clippos.pipeline.orchestrator.score_shortlist", _explode)
 
     job_with_brief = sample_job.model_copy(
         update={
@@ -431,14 +431,14 @@ def test_auto_stage_pauses_for_brief_when_brief_enabled_and_unauthored(
 
 
 def test_auto_stage_embeds_brief_into_scoring_request_when_response_exists(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When the brief response is already on disk, auto picks it up,
     embeds it into scoring-request.json, and proceeds to scoring."""
-    from clipper.adapters.brief import BRIEF_VERSION
-    from clipper.models.scoring import VideoBrief, VideoBriefResponse
-    from clipper.pipeline.brief import brief_response_path
-    from clipper.pipeline.scoring import load_scoring_request
+    from clippos.adapters.brief import BRIEF_VERSION
+    from clippos.models.scoring import VideoBrief, VideoBriefResponse
+    from clippos.pipeline.brief import brief_response_path
+    from clippos.pipeline.scoring import load_scoring_request
 
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     _patch_pipeline_stages(monkeypatch, [])
@@ -484,7 +484,7 @@ def test_auto_stage_embeds_brief_into_scoring_request_when_response_exists(
     # Step 3: stub the scoring step + run auto. Should embed the brief
     # and proceed to review.
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.score_shortlist",
+        "clippos.pipeline.orchestrator.score_shortlist",
         lambda _workspace: [
             {
                 "clip_id": "clip-000",
@@ -506,12 +506,12 @@ def test_auto_stage_embeds_brief_into_scoring_request_when_response_exists(
 
 
 def test_brief_stage_raises_when_no_response_or_cache_available(
-    sample_job: ClipperJob, monkeypatch: pytest.MonkeyPatch
+    sample_job: ClipposJob, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Standalone --stage brief must fail clearly when there is nothing
     to resolve (no response, no cache) — silently re-running mine would
     waste minutes of compute."""
-    from clipper.pipeline.brief import BriefResponseError
+    from clippos.pipeline.brief import BriefResponseError
 
     monkeypatch.chdir(sample_job.video_path.parent.resolve())
     _patch_pipeline_stages(monkeypatch, [])

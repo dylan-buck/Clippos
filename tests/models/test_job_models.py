@@ -3,22 +3,22 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from clipper.models.analysis import MediaProbe
-from clipper.models.candidate import CandidateClip
-from clipper.models.job import ClipperJob, OutputProfile
-from clipper.models.render import CropAnchor, CropPlan, RenderManifest
-from clipper.models.review import ReviewManifest
+from clippos.models.analysis import MediaProbe
+from clippos.models.candidate import CandidateClip
+from clippos.models.job import ClipposJob, OutputProfile
+from clippos.models.render import CropAnchor, CropPlan, RenderManifest
+from clippos.models.review import ReviewManifest
 
 
 def test_job_defaults_include_all_output_ratios() -> None:
-    job = ClipperJob.model_validate(
+    job = ClipposJob.model_validate(
         {"video_path": "/tmp/input.mp4", "output_dir": "/tmp/out"}
     )
     assert job.output_profile.ratios == ["9:16", "1:1", "16:9"]
 
 
 def test_job_requires_existing_review_gate() -> None:
-    job = ClipperJob.model_validate(
+    job = ClipposJob.model_validate(
         {"video_path": "/tmp/input.mp4", "output_dir": "/tmp/out"}
     )
     assert job.review_required is True
@@ -103,7 +103,7 @@ def test_media_probe_captures_core_probe_fields() -> None:
 
 def test_job_rejects_unknown_fields() -> None:
     with pytest.raises(ValidationError):
-        ClipperJob.model_validate(
+        ClipposJob.model_validate(
             {
                 "video_path": "/tmp/input.mp4",
                 "output_dir": "/tmp/out",
@@ -114,7 +114,7 @@ def test_job_rejects_unknown_fields() -> None:
 
 def test_job_rejects_non_positive_max_candidates() -> None:
     with pytest.raises(ValidationError):
-        ClipperJob.model_validate(
+        ClipposJob.model_validate(
             {
                 "video_path": "/tmp/input.mp4",
                 "output_dir": "/tmp/out",

@@ -228,7 +228,7 @@ def test_probe_engine_imports_handles_non_importerror_failures(
         assert "RuntimeError" in entry["error"]
 
 
-def test_config_write_root_persists_clipper_root(tmp_path: Path) -> None:
+def test_config_write_root_persists_clippos_root(tmp_path: Path) -> None:
     """--root is the escape hatch when CLAUDE_PLUGIN_ROOT does not expand
     inside command shims (Anthropic issue #9354). install.sh calls it
     automatically; dev users can call it manually."""
@@ -252,10 +252,10 @@ def test_config_write_root_persists_clipper_root(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert "CLIPPER_ROOT" in payload["keys"]
+    assert "CLIPPOS_ROOT" in payload["keys"]
 
     written = config_path.read_text(encoding="utf-8")
-    assert f"CLIPPER_ROOT={repo_root}" in written
+    assert f"CLIPPOS_ROOT={repo_root}" in written
 
 
 def test_config_write_root_rejects_path_without_helper_script(
@@ -293,7 +293,7 @@ def test_latest_workspace_plain_prints_bare_path(tmp_path: Path) -> None:
     workspace = output_dir / "jobs" / "job-only"
     workspace.mkdir(parents=True)
     clip_skill = _load_clip_skill_module()
-    clip_skill.write_env_file(config_path, {"CLIPPER_OUTPUT_DIR": str(output_dir)})
+    clip_skill.write_env_file(config_path, {"CLIPPOS_OUTPUT_DIR": str(output_dir)})
 
     result = subprocess.run(
         [
@@ -327,7 +327,7 @@ def test_latest_workspace_resolves_newest_job_workspace_from_config(tmp_path: Pa
     (older / "review-manifest.json").write_text("{}", encoding="utf-8")
     (newer / "review-manifest.json").write_text("{}", encoding="utf-8")
     clip_skill = _load_clip_skill_module()
-    clip_skill.write_env_file(config_path, {"CLIPPER_OUTPUT_DIR": str(output_dir)})
+    clip_skill.write_env_file(config_path, {"CLIPPOS_OUTPUT_DIR": str(output_dir)})
 
     result = subprocess.run(
         [

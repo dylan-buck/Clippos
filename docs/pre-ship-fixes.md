@@ -31,12 +31,12 @@ version check:
 
 ```bash
 find_python() {
-  if [ -n "${CLIPPER_BOOTSTRAP_PYTHON:-}" ]; then
-    if "$CLIPPER_BOOTSTRAP_PYTHON" -c 'import sys; sys.exit(0 if (3,12) <= sys.version_info < (3,13) else 1)' >/dev/null 2>&1; then
-      printf '%s\n' "$CLIPPER_BOOTSTRAP_PYTHON"; return
+  if [ -n "${CLIPPOS_BOOTSTRAP_PYTHON:-}" ]; then
+    if "$CLIPPOS_BOOTSTRAP_PYTHON" -c 'import sys; sys.exit(0 if (3,12) <= sys.version_info < (3,13) else 1)' >/dev/null 2>&1; then
+      printf '%s\n' "$CLIPPOS_BOOTSTRAP_PYTHON"; return
     fi
-    printf 'CLIPPER_BOOTSTRAP_PYTHON=%s does not satisfy 3.12.x\n' \
-      "$CLIPPER_BOOTSTRAP_PYTHON" >&2
+    printf 'CLIPPOS_BOOTSTRAP_PYTHON=%s does not satisfy 3.12.x\n' \
+      "$CLIPPOS_BOOTSTRAP_PYTHON" >&2
     exit 1
   fi
   for candidate in python3.12 python3 python; do
@@ -144,7 +144,7 @@ user's first install.
 **Symptom.** `from speechbrain.pretrained import EncoderClassifier`
 raises on speechbrain 1.x.
 
-**Status.** Already fixed in `src/clipper/adapters/speechbrain_diarize.py`
+**Status.** Already fixed in `src/clippos/adapters/speechbrain_diarize.py`
 during the 2026-04-25 dogfood — added a try/except that prefers the
 1.x path (`speechbrain.inference.speaker`) and falls back to the 0.5
 path (`speechbrain.pretrained`).
@@ -173,16 +173,16 @@ discovered. Pull latest before editing the files above.
   an instruction message that names the active interpreter.
 - `commands/clip.md`, `commands/clip-config.md`, `commands/clip-package.md`,
   `SKILL.md` — replaced the brittle
-  `${CLIPPER_ROOT:-${HERMES_SKILL_DIR:-${CLAUDE_PLUGIN_ROOT:-$PWD}}}`
+  `${CLIPPOS_ROOT:-${HERMES_SKILL_DIR:-${CLAUDE_PLUGIN_ROOT:-$PWD}}}`
   prologue with a robust resolution chain that tries env vars →
-  install.sh symlinks → install dir → persisted `~/.config/clipper-tool/.env`
+  install.sh symlinks → install dir → persisted `~/.config/clippos/.env`
   → `$PWD`. Each candidate is validated by checking for
   `scripts/hermes_clip.py`. Resolves the Claude Code
   `${CLAUDE_PLUGIN_ROOT}` expansion bug (Anthropic issue #9354) in
   the wild.
 - `scripts/clip_skill.py config-write --root <path>` — new flag that
-  persists `CLIPPER_ROOT` to the config file with validation. `install.sh`
-  now calls it post-install via `persist_clipper_root`.
+  persists `CLIPPOS_ROOT` to the config file with validation. `install.sh`
+  now calls it post-install via `persist_clippos_root`.
 - 370 tests passing, ruff clean.
 
 ---
@@ -191,7 +191,7 @@ discovered. Pull latest before editing the files above.
 
 Do not declare the install path shipped until **both** Track A and
 Track B complete cold, without manual intervention, on a Mac with no
-prior clipper-tool state. Pip and uv have different resolvers; an
+prior clippos state. Pip and uv have different resolvers; an
 engine-extra set that resolves under one can fail under the other,
 and the original 2.3.1 torch / 3.3.6 whisperx pin set was a real
 example — it loaded fine in a warmed pip env but was unsolvable under
@@ -204,27 +204,27 @@ recurring.
 
 ```bash
 # 1. Wipe any prior install + venv
-rm -rf ~/.local/share/clipping-tool /tmp/clipper-test-venv \
+rm -rf ~/.local/share/clippos /tmp/clippos-test-venv \
        ~/.hermes/skills/clip ~/.claude/skills/clip ~/.codex/skills/clip
 
 # 2. Run the one-liner exactly as a user would
-curl -fsSL https://raw.githubusercontent.com/dylan-buck/clipping-tool/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dylan-buck/Clippos/main/install.sh | bash
 
 # 3. Smoke-test engine imports without touching code
-~/.local/share/clipping-tool/.venv/bin/python -c "
+~/.local/share/clippos/.venv/bin/python -c "
 import whisperx, speechbrain, silero_vad, cv2, retinaface, \
        torch, torchvision, scenedetect, matplotlib
 print('engine ok:', torch.__version__, whisperx.__version__)
 "
 
 # 4. Run preflight via the published skill path
-~/.local/share/clipping-tool/.venv/bin/python \
-  ~/.local/share/clipping-tool/scripts/hermes_clip.py preflight
+~/.local/share/clippos/.venv/bin/python \
+  ~/.local/share/clippos/scripts/hermes_clip.py preflight
 # Expect ready=true, no engine:* entries in `missing`.
 
 # 5. Real /clip end-to-end on a short test video (5–10 min)
-~/.local/share/clipping-tool/.venv/bin/python \
-  ~/.local/share/clipping-tool/scripts/hermes_clip.py advance \
+~/.local/share/clippos/.venv/bin/python \
+  ~/.local/share/clippos/scripts/hermes_clip.py advance \
   --source /absolute/path/to/short-test.mp4
 # Expect: workspace ready, mine completes, scoring handoff emitted.
 ```
@@ -238,9 +238,9 @@ caches:
 
 ```bash
 # 1. Fresh checkout into a clean tmpdir (no prior .venv to warm the resolver)
-rm -rf /tmp/clipper-uv-test
-git clone https://github.com/dylan-buck/clipping-tool /tmp/clipper-uv-test
-cd /tmp/clipper-uv-test
+rm -rf /tmp/clippos-uv-test
+git clone https://github.com/dylan-buck/Clippos /tmp/clippos-uv-test
+cd /tmp/clippos-uv-test
 
 # 2. Resolve + sync engine extras with uv
 uv sync --extra engine

@@ -1,6 +1,6 @@
 # Agent Skill Workflow
 
-The clipping tool is packaged as an agent skill so users can invoke the engine
+Clippos is packaged as an agent skill so users can invoke the engine
 with `/clip` instead of manually running every CLI stage.
 
 ## Commands
@@ -31,29 +31,29 @@ not reimplement. Resolve the skill root against `CLAUDE_PLUGIN_ROOT` when
 installed as a plugin, otherwise the repo checkout:
 
 ```bash
-CLIPPER_ROOT="${CLIPPER_ROOT:-${CLAUDE_PLUGIN_ROOT:-$PWD}}"
-CLIPPER_PYTHON="${CLIPPER_PYTHON:-$CLIPPER_ROOT/.venv/bin/python}"
-[ -x "$CLIPPER_PYTHON" ] || CLIPPER_PYTHON="$(command -v python3)"
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-check
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-write --output-dir ~/Documents/ClipperTool
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" prepare "$SOURCE" --ratios "9:16,1:1"
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" approve "$REVIEW_MANIFEST" --top 3 --min-score 0.70
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" outputs "$RENDER_REPORT"
+CLIPPOS_ROOT="${CLIPPOS_ROOT:-${CLAUDE_PLUGIN_ROOT:-$PWD}}"
+CLIPPOS_PYTHON="${CLIPPOS_PYTHON:-$CLIPPOS_ROOT/.venv/bin/python}"
+[ -x "$CLIPPOS_PYTHON" ] || CLIPPOS_PYTHON="$(command -v python3)"
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-check
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-write --output-dir ~/Documents/Clippos
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" prepare "$SOURCE" --ratios "9:16,1:1"
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" approve "$REVIEW_MANIFEST" --top 3 --min-score 0.70
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" outputs "$RENDER_REPORT"
 ```
 
-The helper reads `~/.config/clipper-tool/.env`, then lets real environment
+The helper reads `~/.config/clippos/.env`, then lets real environment
 variables override file values. URL sources are validated with `ffprobe` at
 download time so an HTML error page saved as `.mp4` fails at the boundary
 instead of crashing the mine stage.
 
 ## Config Keys
 
-- `CLIPPER_OUTPUT_DIR`: default output root.
-- `CLIPPER_RATIOS`: comma-separated subset of `9:16`, `1:1`, `16:9`; defaults
+- `CLIPPOS_OUTPUT_DIR`: default output root.
+- `CLIPPOS_RATIOS`: comma-separated subset of `9:16`, `1:1`, `16:9`; defaults
   to all.
-- `CLIPPER_MAX_CANDIDATES`: candidate count requested from mining.
-- `CLIPPER_APPROVE_TOP`: max clips approved by the skill helper.
-- `CLIPPER_MIN_SCORE`: approval threshold; if no clip clears it, the best clip
+- `CLIPPOS_MAX_CANDIDATES`: candidate count requested from mining.
+- `CLIPPOS_APPROVE_TOP`: max clips approved by the skill helper.
+- `CLIPPOS_MIN_SCORE`: approval threshold; if no clip clears it, the best clip
   is approved so the user gets output.
 - `HF_TOKEN`: Hugging Face token for WhisperX / pyannote diarization.
 
@@ -61,11 +61,11 @@ instead of crashing the mine stage.
 
 1. `/clip` parses source and options.
 2. `prepare` writes a job JSON.
-3. `clipper.cli run --stage mine` writes `scoring-request.json`.
+3. `clippos.cli run --stage mine` writes `scoring-request.json`.
 4. The harness model writes `scoring-response.json`.
-5. `clipper.cli run --stage review` writes `review-manifest.json`.
+5. `clippos.cli run --stage review` writes `review-manifest.json`.
 6. `approve` marks selected candidates with `approved: true`.
-7. `clipper.cli run --stage render` writes final MP4s and `render-report.json`.
+7. `clippos.cli run --stage render` writes final MP4s and `render-report.json`.
 8. `outputs` formats the rendered paths for the final response.
 
 ## Output Location

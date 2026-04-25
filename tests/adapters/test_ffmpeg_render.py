@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from clipper.adapters import ffmpeg_render
-from clipper.adapters import ffmpeg_resolver as fr
-from clipper.adapters.ffmpeg_render import (
+from clippos.adapters import ffmpeg_render
+from clippos.adapters import ffmpeg_resolver as fr
+from clippos.adapters.ffmpeg_render import (
     CANONICAL_OUTPUT_DIMS,
     EMPHASIS_COLOR_BGR,
     FFmpegRenderError,
@@ -17,7 +17,7 @@ from clipper.adapters.ffmpeg_render import (
     build_ffmpeg_command,
     render_clip,
 )
-from clipper.models.render import (
+from clippos.models.render import (
     CaptionLine,
     CaptionWord,
     CropAnchor,

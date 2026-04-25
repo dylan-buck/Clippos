@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from clipper.models.package import (
+from clippos.models.package import (
     MAX_HASHTAGS,
     MAX_HOOK_CHARS,
     MAX_HOOKS,

@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from clipper.adapters.vision import VisionConfig
-from clipper.pipeline.vision import (
+from clippos.adapters.vision import VisionConfig
+from clippos.pipeline.vision import (
     VISION_CACHE_FILENAME,
     build_vision_timeline,
     run_vision,
@@ -84,7 +84,7 @@ def test_run_vision_writes_cache_and_returns_payload(
         calls.append(path)
         return _fake_analyzer_result(sample_face_payload)
 
-    monkeypatch.setattr("clipper.pipeline.vision.vision_adapter.analyze", fake_analyze)
+    monkeypatch.setattr("clippos.pipeline.vision.vision_adapter.analyze", fake_analyze)
 
     payload = run_vision(video, workspace)
 
@@ -108,7 +108,7 @@ def test_run_vision_round_trips_into_timeline(
     workspace.mkdir()
 
     monkeypatch.setattr(
-        "clipper.pipeline.vision.vision_adapter.analyze",
+        "clippos.pipeline.vision.vision_adapter.analyze",
         lambda path, *, config: _fake_analyzer_result(sample_face_payload),
     )
 
@@ -142,7 +142,7 @@ def test_run_vision_reuses_cache_when_model_matches(
     def explode(path: Path, *, config: VisionConfig) -> dict:
         raise AssertionError("adapter should not be called on cache hit")
 
-    monkeypatch.setattr("clipper.pipeline.vision.vision_adapter.analyze", explode)
+    monkeypatch.setattr("clippos.pipeline.vision.vision_adapter.analyze", explode)
 
     payload = run_vision(video, workspace)
 
@@ -174,7 +174,7 @@ def test_run_vision_reruns_when_cached_model_mismatches(
         calls.append(path)
         return _fake_analyzer_result(sample_face_payload)
 
-    monkeypatch.setattr("clipper.pipeline.vision.vision_adapter.analyze", fake_analyze)
+    monkeypatch.setattr("clippos.pipeline.vision.vision_adapter.analyze", fake_analyze)
 
     payload = run_vision(video, workspace)
 
@@ -197,7 +197,7 @@ def test_run_vision_reruns_when_cache_is_corrupt(
     cache_path.write_text("not json", encoding="utf-8")
 
     monkeypatch.setattr(
-        "clipper.pipeline.vision.vision_adapter.analyze",
+        "clippos.pipeline.vision.vision_adapter.analyze",
         lambda path, *, config: _fake_analyzer_result(sample_face_payload),
     )
 
@@ -223,7 +223,7 @@ def test_run_vision_reruns_when_cache_shape_is_wrong(
     )
 
     monkeypatch.setattr(
-        "clipper.pipeline.vision.vision_adapter.analyze",
+        "clippos.pipeline.vision.vision_adapter.analyze",
         lambda path, *, config: _fake_analyzer_result(sample_face_payload),
     )
 

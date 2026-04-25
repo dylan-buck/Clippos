@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from clipper.adapters import whisperx as whisperx_adapter
-from clipper.adapters.whisperx import (
+from clippos.adapters import whisperx as whisperx_adapter
+from clippos.adapters.whisperx import (
     DIARIZER_OFF,
     DIARIZER_PYANNOTE,
     DIARIZER_SPEECHBRAIN,
@@ -21,7 +21,7 @@ from clipper.adapters.whisperx import (
     resolve_hf_token,
     transcribe,
 )
-from clipper.pipeline.transcribe import build_transcript_timeline
+from clippos.pipeline.transcribe import build_transcript_timeline
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +30,7 @@ def _clear_diarizer_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "HF_TOKEN",
         "HUGGING_FACE_HUB_TOKEN",
         "HUGGINGFACE_HUB_TOKEN",
-        "CLIPPER_DIARIZER",
+        "CLIPPOS_DIARIZER",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -386,7 +386,7 @@ def test_transcribe_composes_whisperx_and_pyannote_calls(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("HF_TOKEN", "hf-token")
-    monkeypatch.setenv("CLIPPER_DIARIZER", DIARIZER_PYANNOTE)
+    monkeypatch.setenv("CLIPPOS_DIARIZER", DIARIZER_PYANNOTE)
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
 
@@ -491,7 +491,7 @@ def test_transcribe_pyannote_path_refuses_without_hf_token(
     The default path is now speechbrain (zero-config), so a missing token is
     only an error when the user explicitly opts into pyannote.
     """
-    monkeypatch.setenv("CLIPPER_DIARIZER", DIARIZER_PYANNOTE)
+    monkeypatch.setenv("CLIPPOS_DIARIZER", DIARIZER_PYANNOTE)
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
 
@@ -504,7 +504,7 @@ def test_transcribe_pyannote_path_refuses_without_hf_token(
     # they can switch back to the open-source default.
     message = str(excinfo.value)
     assert "Hugging Face token" in message
-    assert "CLIPPER_DIARIZER" in message
+    assert "CLIPPOS_DIARIZER" in message
 
 
 def test_transcribe_default_path_uses_speechbrain_diarizer(
@@ -527,7 +527,7 @@ def test_transcribe_default_path_uses_speechbrain_diarizer(
     # doesn't matter — `monkeypatch.setitem(sys.modules, ...)` only takes
     # effect when the module hasn't been imported yet, which other tests
     # in the suite may already have done.
-    from clipper.adapters import speechbrain_diarize as _sd
+    from clippos.adapters import speechbrain_diarize as _sd
 
     monkeypatch.setattr(_sd, "diarize_audio", fake_diarize_audio)
 
@@ -558,7 +558,7 @@ def test_transcribe_pyannote_path_falls_back_to_default_speaker_on_empty_result(
     the same default speaker the speechbrain-empty path uses."""
     pd = pytest.importorskip("pandas")
     monkeypatch.setenv("HF_TOKEN", "hf-token")
-    monkeypatch.setenv("CLIPPER_DIARIZER", DIARIZER_PYANNOTE)
+    monkeypatch.setenv("CLIPPOS_DIARIZER", DIARIZER_PYANNOTE)
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
 
@@ -617,16 +617,16 @@ def test_transcribe_pyannote_path_falls_back_to_default_speaker_on_empty_result(
 def test_transcribe_off_path_stamps_fallback_speaker_without_diarizing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """CLIPPER_DIARIZER=off → no diarizer touched, every segment gets the
+    """CLIPPOS_DIARIZER=off → no diarizer touched, every segment gets the
     fallback speaker so downstream code can rely on the field."""
-    monkeypatch.setenv("CLIPPER_DIARIZER", DIARIZER_OFF)
+    monkeypatch.setenv("CLIPPOS_DIARIZER", DIARIZER_OFF)
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
 
     def explode_speechbrain(audio):
         raise AssertionError("speechbrain must not run when diarizer is off")
 
-    from clipper.adapters import speechbrain_diarize as _sd
+    from clippos.adapters import speechbrain_diarize as _sd
 
     monkeypatch.setattr(_sd, "diarize_audio", explode_speechbrain)
 
@@ -647,14 +647,14 @@ def test_resolve_diarizer_defaults_to_speechbrain() -> None:
 
 
 def test_resolve_diarizer_reads_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("CLIPPER_DIARIZER", "pyannote")
+    monkeypatch.setenv("CLIPPOS_DIARIZER", "pyannote")
     assert resolve_diarizer() == DIARIZER_PYANNOTE
 
 
 def test_resolve_diarizer_explicit_arg_wins_over_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("CLIPPER_DIARIZER", "pyannote")
+    monkeypatch.setenv("CLIPPOS_DIARIZER", "pyannote")
     assert resolve_diarizer("off") == DIARIZER_OFF
 
 

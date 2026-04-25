@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from clipper.adapters.rubric import RUBRIC_VERSION, build_rubric_prompt
-from clipper.models.candidate import CandidateClip
-from clipper.models.scoring import (
+from clippos.adapters.rubric import RUBRIC_VERSION, build_rubric_prompt
+from clippos.models.candidate import CandidateClip
+from clippos.models.scoring import (
     ClipBrief,
     ClipScore,
     MiningSignals,
@@ -16,8 +16,8 @@ from clipper.models.scoring import (
     ScoringResponse,
     VideoBrief,
 )
-from clipper.pipeline.candidates import ScoredWindow, WindowSignals
-from clipper.pipeline.scoring import (
+from clippos.pipeline.candidates import ScoredWindow, WindowSignals
+from clippos.pipeline.scoring import (
     SCORING_REQUEST_FILENAME,
     SCORING_RESPONSE_FILENAME,
     ScoringResponseError,
@@ -35,7 +35,7 @@ from clipper.pipeline.scoring import (
     scoring_cache_dir,
     write_scoring_request,
 )
-from clipper.pipeline.transcribe import TranscriptSegment
+from clippos.pipeline.transcribe import TranscriptSegment
 
 
 def _segment(**overrides) -> TranscriptSegment:

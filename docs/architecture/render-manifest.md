@@ -15,7 +15,7 @@ A `RenderManifest` contains:
 - `crop_plans` — `dict[AspectRatio, CropPlan]` with one plan per rendered ratio. The set of keys must match `outputs` exactly, and each plan's `aspect_ratio` must equal its key.
 - `caption_plan` — ordered `list[CaptionLine]` covering the clip window, retimed relative to `start_seconds`.
 - `mode` — `SceneMode` literal (`TRACK` or `GENERAL`), derived from the vision timeline by `pipeline.scene_strategy.derive_clip_mode`. `TRACK` is the default when a primary face is detected in at least half of the clip's vision frames; `GENERAL` kicks in for clips with no face or many transient faces.
-- `caption_preset` — `CaptionPreset` literal naming the ASS style catalog entry (see *Caption presets* below). Defaults to `hook-default` (alias of `bottom-creator`). Selected by `ClipperJob.output_profile.caption_preset` and resolved to a `CaptionStyle` at render time by `pipeline.caption_styles.resolve_caption_style`.
+- `caption_preset` — `CaptionPreset` literal naming the ASS style catalog entry (see *Caption presets* below). Defaults to `hook-default` (alias of `bottom-creator`). Selected by `ClipposJob.output_profile.caption_preset` and resolved to a `CaptionStyle` at render time by `pipeline.caption_styles.resolve_caption_style`.
 
 ### `CropPlan`
 

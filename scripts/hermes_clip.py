@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Agent-loop helper for the clip skill (Hermes-first, works in any harness).
 
-This script drives the clipper pipeline as a resumable state machine and
+This script drives the Clippos pipeline as a resumable state machine and
 emits a single structured JSON payload on every call, so any agent harness
 — Hermes, Claude Code, Codex, or a bespoke one — can advance the flow with
 one tool call per step. It was designed around Hermes's single-`/clip`-
@@ -18,7 +18,7 @@ Subcommands:
 - ``feedback``          — record kept/skipped outcomes into the creator
                           history (drives the self-improving profile).
 
-The helper delegates to ``scripts/clip_skill.py`` and ``python -m clipper.cli``
+The helper delegates to ``scripts/clip_skill.py`` and ``python -m clippos.cli``
 rather than re-implementing orchestration, so existing tests stay authoritative.
 """
 from __future__ import annotations
@@ -49,7 +49,7 @@ def _load_clip_skill():
 
 
 clip_skill = _load_clip_skill()
-from clipper.pipeline import creator_profile  # noqa: E402
+from clippos.pipeline import creator_profile  # noqa: E402
 
 CONFIG_PATH = clip_skill.CONFIG_PATH
 HERMES_RESUME_FILENAME = "hermes-job.json"
@@ -179,7 +179,7 @@ def cmd_preflight(args: argparse.Namespace) -> int:
         "optional_upgrades": {
             "hf_token": {
                 "available": has_hf_token,
-                "enables": "pyannote/speaker-diarization-3.1 (set CLIPPER_DIARIZER=pyannote)",
+                "enables": "pyannote/speaker-diarization-3.1 (set CLIPPOS_DIARIZER=pyannote)",
             },
         },
     }
@@ -191,7 +191,7 @@ def cmd_preflight(args: argparse.Namespace) -> int:
             "static-ffmpeg binary will be used automatically. If "
             "`engine:*` entries appear in `missing`, the active interpreter "
             f"({engine_status.get('interpreter')}) lacks engine extras — "
-            "either install them in that interpreter or point CLIPPER_PYTHON "
+            "either install them in that interpreter or point CLIPPOS_PYTHON "
             "at one that has them. Diarization works out of the box without "
             "HF_TOKEN; the token is only needed if the user explicitly "
             "wants the pyannote upgrade."
@@ -749,7 +749,7 @@ def _run_clip_skill(
 
 
 def _run_cli_stage(job_path: Path, stage: str, *, workspace: Path) -> None:
-    """Run a clipper.cli stage with live stderr passthrough.
+    """Run a clippos.cli stage with live stderr passthrough.
 
     Mining + render take 5-30 minutes on real videos. A blanket
     ``capture_output=True`` would swallow all of WhisperX, SpeechBrain,
@@ -779,7 +779,7 @@ def _run_cli_stage(job_path: Path, stage: str, *, workspace: Path) -> None:
 
     _status(f"Starting stage `{stage}`.", workspace=workspace)
     proc = subprocess.Popen(
-        [sys.executable, "-m", "clipper.cli", "run", str(job_path), "--stage", stage],
+        [sys.executable, "-m", "clippos.cli", "run", str(job_path), "--stage", stage],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
@@ -796,7 +796,7 @@ def _run_cli_stage(job_path: Path, stage: str, *, workspace: Path) -> None:
     if proc.returncode != 0:
         message = (
             "".join(tail).strip()
-            or f"clipper stage {stage} exited {proc.returncode}"
+            or f"clippos stage {stage} exited {proc.returncode}"
         )
         raise HermesClipError(message, stage=stage, workspace=workspace)
     _status(f"Finished stage `{stage}`.", workspace=workspace)

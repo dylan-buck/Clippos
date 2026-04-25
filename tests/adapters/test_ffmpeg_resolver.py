@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from clipper.adapters import ffmpeg_resolver as fr
+from clippos.adapters import ffmpeg_resolver as fr
 
 
 @pytest.fixture(autouse=True)

@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from clipper.adapters.rubric import RUBRIC_VERSION
-from clipper.models.scoring import ScoringResponse
-from clipper.pipeline.scoring import SCORING_RESPONSE_FILENAME
-from clipper.wrappers import claude_code, codex, common, hermes
+from clippos.adapters.rubric import RUBRIC_VERSION
+from clippos.models.scoring import ScoringResponse
+from clippos.pipeline.scoring import SCORING_RESPONSE_FILENAME
+from clippos.wrappers import claude_code, codex, common, hermes
 
 
 def test_build_common_job_relies_on_model_defaults() -> None:
@@ -18,12 +18,12 @@ def test_build_common_job_relies_on_model_defaults() -> None:
         captured.update(payload)
         return sentinel
 
-    original = common.ClipperJob.model_validate
-    common.ClipperJob.model_validate = fake_model_validate
+    original = common.ClipposJob.model_validate
+    common.ClipposJob.model_validate = fake_model_validate
     try:
         job = common.build_common_job("/tmp/input.mp4", "/tmp/out")
     finally:
-        common.ClipperJob.model_validate = original
+        common.ClipposJob.model_validate = original
 
     assert job is sentinel
     assert captured == {

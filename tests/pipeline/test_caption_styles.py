@@ -1,6 +1,6 @@
 import pytest
 
-from clipper.pipeline.caption_styles import (
+from clippos.pipeline.caption_styles import (
     ASS_ALIGN_BOTTOM_CENTER,
     ASS_ALIGN_MIDDLE_CENTER,
     ASS_ALIGN_TOP_CENTER,

@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from clipper.adapters import ffmpeg_render
-from clipper.adapters.rubric import RUBRIC_VERSION
-from clipper.adapters.storage import write_json
-from clipper.models.job import ClipperJob
-from clipper.models.scoring import ClipScore, RubricScores, ScoringResponse
-from clipper.pipeline.orchestrator import run_job
-from clipper.pipeline.scoring import (
+from clippos.adapters import ffmpeg_render
+from clippos.adapters.rubric import RUBRIC_VERSION
+from clippos.adapters.storage import write_json
+from clippos.models.job import ClipposJob
+from clippos.models.scoring import ClipScore, RubricScores, ScoringResponse
+from clippos.pipeline.orchestrator import run_job
+from clippos.pipeline.scoring import (
     load_scoring_request,
     scoring_response_path,
 )
@@ -30,18 +30,18 @@ def test_smoke_mine_review_approve_render_with_real_ffmpeg(
     _write_synthetic_video(source_video)
 
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.transcribe_video",
+        "clippos.pipeline.orchestrator.transcribe_video",
         lambda _path, _workspace: _transcript_payload(),
     )
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.analyze_video",
+        "clippos.pipeline.orchestrator.analyze_video",
         lambda _path, _workspace: _vision_payload(),
     )
     monkeypatch.setitem(ffmpeg_render.CANONICAL_OUTPUT_DIMS, "9:16", (180, 320))
     monkeypatch.setitem(ffmpeg_render.CANONICAL_OUTPUT_DIMS, "1:1", (240, 240))
     monkeypatch.setitem(ffmpeg_render.CANONICAL_OUTPUT_DIMS, "16:9", (320, 180))
 
-    job = ClipperJob(
+    job = ClipposJob(
         video_path=source_video,
         output_dir=output_dir,
         max_candidates=1,

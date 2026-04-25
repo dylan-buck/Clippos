@@ -59,7 +59,7 @@ One `PublishPack` per approved clip:
 - `hooks` — 2–3 opening-line rewrites, each ≤ 140 characters.
 
 All bounds are enforced both by the JSON response schema and by pydantic
-validators in `clipper.models.package` — the CLI re-parses the response and
+validators in `clippos.models.package` — the CLI re-parses the response and
 fails with a non-zero exit rather than writing a half-baked pack.
 
 ## Producer / consumer

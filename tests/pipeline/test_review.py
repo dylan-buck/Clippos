@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from clipper.models.candidate import CandidateClip
-from clipper.pipeline.review import build_review_manifest
+from clippos.models.candidate import CandidateClip
+from clippos.pipeline.review import build_review_manifest
 
 
 @pytest.fixture

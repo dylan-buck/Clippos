@@ -2,20 +2,20 @@ from pathlib import Path
 
 import pytest
 
-from clipper.models.analysis import MediaProbe
-from clipper.models.candidate import CandidateClip
-from clipper.pipeline.render import (
+from clippos.models.analysis import MediaProbe
+from clippos.models.candidate import CandidateClip
+from clippos.pipeline.render import (
     build_render_plan,
     clip_render_dir,
     output_video_path,
     render_manifest_path,
 )
-from clipper.pipeline.transcribe import (
+from clippos.pipeline.transcribe import (
     TranscriptSegment,
     TranscriptTimeline,
     TranscriptWord,
 )
-from clipper.pipeline.vision import FaceBox, VisionFrame, VisionTimeline
+from clippos.pipeline.vision import FaceBox, VisionFrame, VisionTimeline
 
 
 @pytest.fixture

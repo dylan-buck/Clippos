@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from clipper.adapters.rubric import RUBRIC_VERSION
-from clipper.adapters.storage import write_json
-from clipper.models.job import ClipperJob
-from clipper.models.scoring import ClipScore, RubricScores, ScoringResponse
-from clipper.pipeline.orchestrator import run_job
-from clipper.pipeline.scoring import (
+from clippos.adapters.rubric import RUBRIC_VERSION
+from clippos.adapters.storage import write_json
+from clippos.models.job import ClipposJob
+from clippos.models.scoring import ClipScore, RubricScores, ScoringResponse
+from clippos.pipeline.orchestrator import run_job
+from clippos.pipeline.scoring import (
     load_scoring_request,
     scoring_response_path,
 )
@@ -24,7 +24,7 @@ def test_real_video_runs_mine_review_approval_and_render(tmp_path: Path) -> None
     _require_engine_dependencies()
     _require_hf_token()
 
-    job = ClipperJob(
+    job = ClipposJob(
         video_path=video_path,
         output_dir=tmp_path / "out",
         max_candidates=3,
@@ -71,12 +71,12 @@ def test_real_video_runs_mine_review_approval_and_render(tmp_path: Path) -> None
 
 
 def _require_real_video_path() -> Path:
-    raw_path = os.environ.get("CLIPPER_E2E_VIDEO")
+    raw_path = os.environ.get("CLIPPOS_E2E_VIDEO")
     if not raw_path:
-        pytest.skip("Set CLIPPER_E2E_VIDEO=/absolute/path/video.mp4 to run")
+        pytest.skip("Set CLIPPOS_E2E_VIDEO=/absolute/path/video.mp4 to run")
     video_path = Path(raw_path).expanduser().resolve()
     if not video_path.exists():
-        pytest.fail(f"CLIPPER_E2E_VIDEO does not exist: {video_path}")
+        pytest.fail(f"CLIPPOS_E2E_VIDEO does not exist: {video_path}")
     return video_path
 
 

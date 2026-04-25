@@ -15,12 +15,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from clipper.adapters.brief import (
+from clippos.adapters.brief import (
     BRIEF_VERSION,
     build_brief_prompt,
     build_brief_response_schema,
 )
-from clipper.pipeline.brief import (
+from clippos.pipeline.brief import (
     BRIEF_CACHE_FILENAME,
     BRIEF_REQUEST_FILENAME,
     MAX_TRANSCRIPT_CHARS,
@@ -35,12 +35,12 @@ from clipper.pipeline.brief import (
     resolve_brief,
     write_brief_request,
 )
-from clipper.models.scoring import (
+from clippos.models.scoring import (
     VideoBrief,
     VideoBriefRequest,
     VideoBriefResponse,
 )
-from clipper.pipeline.transcribe import build_transcript_timeline
+from clippos.pipeline.transcribe import build_transcript_timeline
 
 VALID_EXPECTED_PATTERNS = [
     "the warm-welcome moment",

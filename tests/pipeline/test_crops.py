@@ -1,6 +1,6 @@
 import pytest
 
-from clipper.pipeline.crops import (
+from clippos.pipeline.crops import (
     FAST_PAN_RATE,
     FAST_PAN_THRESHOLD,
     SAFE_ZONE_RADIUS,
@@ -8,7 +8,7 @@ from clipper.pipeline.crops import (
     SmoothedCameraman,
     build_crop_plans,
 )
-from clipper.pipeline.vision import FaceBox, VisionFrame, VisionTimeline
+from clippos.pipeline.vision import FaceBox, VisionFrame, VisionTimeline
 
 
 def _frame(

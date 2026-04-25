@@ -62,7 +62,7 @@ for what landed versus what was planned.
 
 - **No provider SDK, no API key.** The original plan mentioned an "optional
   harness-model SDK adapter." The shipped clipper has no SDK or key path. The
-  `HarnessModelAdapter` Protocol lives in `src/clipper/adapters/harness_model.py`
+  `HarnessModelAdapter` Protocol lives in `src/clippos/adapters/harness_model.py`
   for forward compatibility, but it is not the default path. Scoring happens
   through workspace JSON files the surrounding harness (Claude Code, Codex,
   Hermes) reads and writes.
@@ -91,7 +91,7 @@ for what landed versus what was planned.
   `claude_code.py`, `codex.py`, `hermes.py` adds
   `*_load_scoring_request(workspace_dir)` and
   `*_write_scoring_response(workspace_dir, response)` alongside
-  `*_job_from_args`, all delegating to `clipper.wrappers.common`. Task 10 only
+  `*_job_from_args`, all delegating to `clippos.wrappers.common`. Task 10 only
   sketched the job-building path.
 - **Render is explicit and approval-gated.** `run_job` accepts
   `stage="mine"|"review"|"render"|"auto"`. `auto` stops at review/scoring and
@@ -110,8 +110,8 @@ When these differ from the task snippets below, the canonical references win:
 - [docs/architecture/scoring-handoff.md](../../architecture/scoring-handoff.md)
 - [docs/architecture/review-manifest.md](../../architecture/review-manifest.md)
 - [docs/architecture/render-manifest.md](../../architecture/render-manifest.md)
-- Source of truth for the rubric: `src/clipper/adapters/rubric.py`.
-- Source of truth for workspace artifact names: `src/clipper/pipeline/scoring.py`.
+- Source of truth for the rubric: `src/clippos/adapters/rubric.py`.
+- Source of truth for workspace artifact names: `src/clippos/pipeline/scoring.py`.
 
 ---
 
@@ -122,42 +122,42 @@ When these differ from the task snippets below, the canonical references win:
 - Create: `pyproject.toml`
 - Create: `README.md`
 - Create: `.gitignore`
-- Create: `src/clipper/__init__.py`
-- Create: `src/clipper/config.py`
-- Create: `src/clipper/cli.py`
-- Create: `src/clipper/logging.py`
+- Create: `src/clippos/__init__.py`
+- Create: `src/clippos/config.py`
+- Create: `src/clippos/cli.py`
+- Create: `src/clippos/logging.py`
 
 ### Domain models
 
-- Create: `src/clipper/models/job.py`
-- Create: `src/clipper/models/media.py`
-- Create: `src/clipper/models/analysis.py`
-- Create: `src/clipper/models/candidate.py`
-- Create: `src/clipper/models/review.py`
-- Create: `src/clipper/models/render.py`
+- Create: `src/clippos/models/job.py`
+- Create: `src/clippos/models/media.py`
+- Create: `src/clippos/models/analysis.py`
+- Create: `src/clippos/models/candidate.py`
+- Create: `src/clippos/models/review.py`
+- Create: `src/clippos/models/render.py`
 
 ### Pipeline modules
 
-- Create: `src/clipper/pipeline/ingest.py`
-- Create: `src/clipper/pipeline/transcribe.py`
-- Create: `src/clipper/pipeline/vision.py`
-- Create: `src/clipper/pipeline/candidates.py`
-- Create: `src/clipper/pipeline/review.py`
-- Create: `src/clipper/pipeline/render.py`
-- Create: `src/clipper/pipeline/orchestrator.py`
+- Create: `src/clippos/pipeline/ingest.py`
+- Create: `src/clippos/pipeline/transcribe.py`
+- Create: `src/clippos/pipeline/vision.py`
+- Create: `src/clippos/pipeline/candidates.py`
+- Create: `src/clippos/pipeline/review.py`
+- Create: `src/clippos/pipeline/render.py`
+- Create: `src/clippos/pipeline/orchestrator.py`
 
 ### Infra and adapters
 
-- Create: `src/clipper/adapters/ffmpeg.py`
-- Create: `src/clipper/adapters/harness_model.py`
-- Create: `src/clipper/adapters/storage.py`
+- Create: `src/clippos/adapters/ffmpeg.py`
+- Create: `src/clippos/adapters/harness_model.py`
+- Create: `src/clippos/adapters/storage.py`
 
 ### Review artifacts and wrappers
 
-- Create: `src/clipper/wrappers/common.py`
-- Create: `src/clipper/wrappers/codex.py`
-- Create: `src/clipper/wrappers/claude_code.py`
-- Create: `src/clipper/wrappers/hermes.py`
+- Create: `src/clippos/wrappers/common.py`
+- Create: `src/clippos/wrappers/codex.py`
+- Create: `src/clippos/wrappers/claude_code.py`
+- Create: `src/clippos/wrappers/hermes.py`
 
 ### Tests
 
@@ -188,8 +188,8 @@ When these differ from the task snippets below, the canonical references win:
 - Create: `pyproject.toml`
 - Create: `.gitignore`
 - Create: `README.md`
-- Create: `src/clipper/__init__.py`
-- Create: `src/clipper/cli.py`
+- Create: `src/clippos/__init__.py`
+- Create: `src/clippos/cli.py`
 - Create: `tests/test_cli.py`
 
 - [ ] **Step 1: Write the failing CLI smoke test**
@@ -197,15 +197,15 @@ When these differ from the task snippets below, the canonical references win:
 ```python
 from typer.testing import CliRunner
 
-from clipper import __version__
-from clipper.cli import app
+from clippos import __version__
+from clippos.cli import app
 
 
 def test_version_command_prints_package_version() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert result.stdout == f"clipper-tool {__version__}\n"
+    assert result.stdout == f"clippos {__version__}\n"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -216,23 +216,23 @@ Expected: FAIL with `ModuleNotFoundError` or missing `app`
 - [ ] **Step 3: Write minimal package and CLI implementation**
 
 ```python
-# src/clipper/__init__.py
+# src/clippos/__init__.py
 __all__ = ["__version__"]
 __version__ = "0.1.0"
 ```
 
 ```python
-# src/clipper/cli.py
+# src/clippos/cli.py
 import typer
 
-from clipper import __version__
+from clippos import __version__
 
 app = typer.Typer(no_args_is_help=True)
 
 
 @app.command()
 def version() -> None:
-    typer.echo(f"clipper-tool {__version__}")
+    typer.echo(f"clippos {__version__}")
 ```
 
 ```toml
@@ -242,7 +242,7 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "clipper-tool"
+name = "clippos"
 dynamic = ["version"]
 requires-python = ">=3.12"
 dependencies = ["typer>=0.12"]
@@ -251,7 +251,7 @@ dependencies = ["typer>=0.12"]
 dev = ["pytest>=8.2", "pytest-cov>=5.0", "ruff>=0.4"]
 
 [project.scripts]
-clipper-tool = "clipper.cli:app"
+clippos = "clippos.cli:app"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -260,7 +260,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.dynamic]
-version = {attr = "clipper.__version__"}
+version = {attr = "clippos.__version__"}
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -299,7 +299,7 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add pyproject.toml .gitignore README.md src/clipper/__init__.py src/clipper/cli.py tests/test_cli.py
+git add pyproject.toml .gitignore README.md src/clippos/__init__.py src/clippos/cli.py tests/test_cli.py
 git commit -m "chore: bootstrap clipper tool package"
 ```
 
@@ -307,30 +307,30 @@ git commit -m "chore: bootstrap clipper tool package"
 
 **Files:**
 - Modify: `pyproject.toml`
-- Create: `src/clipper/models/job.py`
-- Create: `src/clipper/models/media.py`
-- Create: `src/clipper/models/analysis.py`
-- Create: `src/clipper/models/candidate.py`
-- Create: `src/clipper/models/review.py`
-- Create: `src/clipper/models/render.py`
+- Create: `src/clippos/models/job.py`
+- Create: `src/clippos/models/media.py`
+- Create: `src/clippos/models/analysis.py`
+- Create: `src/clippos/models/candidate.py`
+- Create: `src/clippos/models/review.py`
+- Create: `src/clippos/models/render.py`
 - Create: `tests/models/test_job_models.py`
 - Create: `docs/architecture/job-spec.md`
 
 - [ ] **Step 1: Write the failing model tests**
 
 ```python
-from clipper.models.job import ClipperJob, OutputProfile
+from clippos.models.job import ClipposJob, OutputProfile
 
 
 def test_job_defaults_include_all_output_ratios() -> None:
-    job = ClipperJob.model_validate(
+    job = ClipposJob.model_validate(
         {"video_path": "/tmp/input.mp4", "output_dir": "/tmp/out"}
     )
     assert job.output_profile.ratios == ["9:16", "1:1", "16:9"]
 
 
 def test_job_requires_existing_review_gate() -> None:
-    job = ClipperJob.model_validate(
+    job = ClipposJob.model_validate(
         {"video_path": "/tmp/input.mp4", "output_dir": "/tmp/out"}
     )
     assert job.review_required is True
@@ -354,7 +354,7 @@ class OutputProfile(BaseModel):
     caption_preset: str = "hook-default"
 
 
-class ClipperJob(BaseModel):
+class ClipposJob(BaseModel):
     video_path: Path
     output_dir: Path
     review_required: bool = True
@@ -428,15 +428,15 @@ Expected: PASS
 - [ ] **Step 8: Commit**
 
 ```bash
-git add pyproject.toml src/clipper/models tests/models/test_job_models.py docs/architecture/job-spec.md
+git add pyproject.toml src/clippos/models tests/models/test_job_models.py docs/architecture/job-spec.md
 git commit -m "feat: define clipper job and manifest models"
 ```
 
 ## Task 3: Build Ingest And FFmpeg Probe Support
 
 **Files:**
-- Create: `src/clipper/adapters/ffmpeg.py`
-- Create: `src/clipper/pipeline/ingest.py`
+- Create: `src/clippos/adapters/ffmpeg.py`
+- Create: `src/clippos/pipeline/ingest.py`
 - Create: `tests/pipeline/test_ingest.py`
 
 - [ ] **Step 1: Write the failing ingest test**
@@ -444,14 +444,14 @@ git commit -m "feat: define clipper job and manifest models"
 ```python
 from pathlib import Path
 
-from clipper.models.job import ClipperJob
-from clipper.pipeline.ingest import ingest_job
+from clippos.models.job import ClipposJob
+from clippos.pipeline.ingest import ingest_job
 
 
 def test_ingest_job_builds_workspace_and_probe_result(tmp_path: Path) -> None:
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
-    job = ClipperJob(video_path=video, output_dir=tmp_path / "out")
+    job = ClipposJob(video_path=video, output_dir=tmp_path / "out")
     result = ingest_job(job, probe_data={"duration_seconds": 120.0, "width": 1920, "height": 1080, "fps": 30.0, "audio_sample_rate": 48000})
     assert result.workspace_dir == job.output_dir / "jobs" / result.job_id
     assert result.probe.duration_seconds == 120.0
@@ -492,8 +492,8 @@ from dataclasses import dataclass
 from hashlib import sha1
 from pathlib import Path
 
-from clipper.models.job import ClipperJob
-from clipper.models.media import MediaProbe
+from clippos.models.job import ClipposJob
+from clippos.models.media import MediaProbe
 
 
 @dataclass
@@ -503,7 +503,7 @@ class IngestResult:
     probe: MediaProbe
 
 
-def ingest_job(job: ClipperJob, probe_data: dict) -> IngestResult:
+def ingest_job(job: ClipposJob, probe_data: dict) -> IngestResult:
     job_id = sha1(str(job.video_path).encode()).hexdigest()[:12]
     workspace_dir = job.output_dir / "jobs" / job_id
     workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -517,7 +517,7 @@ def ingest_job(job: ClipperJob, probe_data: dict) -> IngestResult:
 def test_ingest_job_uses_stable_job_id(tmp_path: Path) -> None:
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
-    job = ClipperJob(video_path=video, output_dir=tmp_path / "out")
+    job = ClipposJob(video_path=video, output_dir=tmp_path / "out")
     one = ingest_job(job, probe_data={"duration_seconds": 1.0, "width": 1, "height": 1, "fps": 1.0, "audio_sample_rate": 16000})
     two = ingest_job(job, probe_data={"duration_seconds": 1.0, "width": 1, "height": 1, "fps": 1.0, "audio_sample_rate": 16000})
     assert one.job_id == two.job_id
@@ -531,21 +531,21 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/clipper/adapters/ffmpeg.py src/clipper/pipeline/ingest.py tests/pipeline/test_ingest.py
+git add src/clippos/adapters/ffmpeg.py src/clippos/pipeline/ingest.py tests/pipeline/test_ingest.py
 git commit -m "feat: add ingest pipeline and ffmpeg probe adapter"
 ```
 
 ## Task 4: Add Transcript And Diarization Analysis
 
 **Files:**
-- Create: `src/clipper/pipeline/transcribe.py`
+- Create: `src/clippos/pipeline/transcribe.py`
 - Create: `tests/pipeline/test_transcribe.py`
 - Create: `tests/fixtures/sample_transcript.json`
 
 - [ ] **Step 1: Write the failing transcription aggregation test**
 
 ```python
-from clipper.pipeline.transcribe import build_transcript_timeline
+from clippos.pipeline.transcribe import build_transcript_timeline
 
 
 def test_build_transcript_timeline_returns_word_ranges(sample_transcript_payload: dict) -> None:
@@ -617,21 +617,21 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/clipper/pipeline/transcribe.py tests/pipeline/test_transcribe.py tests/fixtures/sample_transcript.json
+git add src/clippos/pipeline/transcribe.py tests/pipeline/test_transcribe.py tests/fixtures/sample_transcript.json
 git commit -m "feat: normalize transcript and speaker timelines"
 ```
 
 ## Task 5: Add Vision Signals For Framing And Spike Detection
 
 **Files:**
-- Create: `src/clipper/pipeline/vision.py`
+- Create: `src/clippos/pipeline/vision.py`
 - Create: `tests/pipeline/test_vision.py`
 - Create: `tests/fixtures/sample_faces.json`
 
 - [ ] **Step 1: Write the failing vision aggregation test**
 
 ```python
-from clipper.pipeline.vision import build_vision_timeline
+from clippos.pipeline.vision import build_vision_timeline
 
 
 def test_build_vision_timeline_emits_face_and_motion_events(sample_face_payload: dict) -> None:
@@ -700,20 +700,20 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/clipper/pipeline/vision.py tests/pipeline/test_vision.py tests/fixtures/sample_faces.json
+git add src/clippos/pipeline/vision.py tests/pipeline/test_vision.py tests/fixtures/sample_faces.json
 git commit -m "feat: add vision timeline for motion and framing"
 ```
 
 ## Task 6: Build Candidate Mining And Balanced Scoring
 
 **Files:**
-- Create: `src/clipper/pipeline/candidates.py`
+- Create: `src/clippos/pipeline/candidates.py`
 - Create: `tests/pipeline/test_candidates.py`
 
 - [ ] **Step 1: Write the failing candidate mining test**
 
 ```python
-from clipper.pipeline.candidates import generate_candidates
+from clippos.pipeline.candidates import generate_candidates
 
 
 def test_generate_candidates_promotes_clips_with_hook_and_payoff(sample_transcript_timeline, sample_vision_timeline) -> None:
@@ -778,23 +778,23 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/clipper/pipeline/candidates.py tests/pipeline/test_candidates.py
+git add src/clippos/pipeline/candidates.py tests/pipeline/test_candidates.py
 git commit -m "feat: add candidate mining and balanced clip scoring"
 ```
 
 ## Task 7: Add Harness-Model Review And Review Manifest Output
 
 **Files:**
-- Create: `src/clipper/adapters/harness_model.py`
-- Create: `src/clipper/pipeline/review.py`
-- Create: `src/clipper/adapters/storage.py`
+- Create: `src/clippos/adapters/harness_model.py`
+- Create: `src/clippos/pipeline/review.py`
+- Create: `src/clippos/adapters/storage.py`
 - Create: `tests/pipeline/test_review.py`
 - Create: `docs/architecture/review-manifest.md`
 
 - [ ] **Step 1: Write the failing review manifest test**
 
 ```python
-from clipper.pipeline.review import build_review_manifest
+from clippos.pipeline.review import build_review_manifest
 
 
 def test_build_review_manifest_enriches_candidates_with_titles(sample_candidates, tmp_path) -> None:
@@ -866,21 +866,21 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/clipper/adapters/harness_model.py src/clipper/pipeline/review.py src/clipper/adapters/storage.py tests/pipeline/test_review.py docs/architecture/review-manifest.md
+git add src/clippos/adapters/harness_model.py src/clippos/pipeline/review.py src/clippos/adapters/storage.py tests/pipeline/test_review.py docs/architecture/review-manifest.md
 git commit -m "feat: add harness review stage and review manifest output"
 ```
 
 ## Task 8: Add Caption Planning, Crop Planning, And Multi-Ratio Rendering
 
 **Files:**
-- Create: `src/clipper/pipeline/render.py`
+- Create: `src/clippos/pipeline/render.py`
 - Create: `tests/pipeline/test_render.py`
 - Create: `docs/architecture/render-manifest.md`
 
 - [ ] **Step 1: Write the failing render-plan test**
 
 ```python
-from clipper.pipeline.render import build_render_plan
+from clippos.pipeline.render import build_render_plan
 
 
 def test_build_render_plan_outputs_all_ratios(sample_review_candidate) -> None:
@@ -935,38 +935,38 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/clipper/pipeline/render.py tests/pipeline/test_render.py docs/architecture/render-manifest.md
+git add src/clippos/pipeline/render.py tests/pipeline/test_render.py docs/architecture/render-manifest.md
 git commit -m "feat: add multi-ratio render planning"
 ```
 
 ## Task 9: Wire The Orchestrator And CLI Job Execution
 
 **Files:**
-- Create: `src/clipper/pipeline/orchestrator.py`
-- Modify: `src/clipper/cli.py`
+- Create: `src/clippos/pipeline/orchestrator.py`
+- Modify: `src/clippos/cli.py`
 - Create: `tests/pipeline/test_orchestrator.py`
 
 - [ ] **Step 1: Write the failing orchestrator test**
 
 ```python
-from clipper.pipeline.orchestrator import run_job
+from clippos.pipeline.orchestrator import run_job
 
 
 def test_run_job_returns_review_manifest_path(tmp_path, sample_job, monkeypatch) -> None:
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.probe_video",
+        "clippos.pipeline.orchestrator.probe_video",
         lambda _path: {"duration_seconds": 120.0, "width": 1920, "height": 1080, "fps": 30.0, "audio_sample_rate": 48000},
     )
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.transcribe_video",
+        "clippos.pipeline.orchestrator.transcribe_video",
         lambda _path: sample_job.mock_transcript,
     )
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.analyze_video",
+        "clippos.pipeline.orchestrator.analyze_video",
         lambda _path: sample_job.mock_vision,
     )
     monkeypatch.setattr(
-        "clipper.pipeline.orchestrator.score_shortlist",
+        "clippos.pipeline.orchestrator.score_shortlist",
         lambda _job, _candidates: sample_job.mock_model_scores,
     )
     manifest_path = run_job(sample_job)
@@ -1000,7 +1000,7 @@ def run_job(job):
 @app.command()
 def run(job_path: Path) -> None:
     payload = json.loads(job_path.read_text(encoding="utf-8"))
-    job = ClipperJob.model_validate(payload)
+    job = ClipposJob.model_validate(payload)
     manifest_path = run_job(job)
     typer.echo(str(manifest_path))
 ```
@@ -1024,23 +1024,23 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/clipper/pipeline/orchestrator.py src/clipper/cli.py tests/pipeline/test_orchestrator.py tests/test_cli.py
+git add src/clippos/pipeline/orchestrator.py src/clippos/cli.py tests/pipeline/test_orchestrator.py tests/test_cli.py
 git commit -m "feat: wire clipper pipeline through cli job execution"
 ```
 
 ## Task 10: Add Thin Wrappers For Codex, Claude Code, And Hermes
 
 **Files:**
-- Create: `src/clipper/wrappers/common.py`
-- Create: `src/clipper/wrappers/codex.py`
-- Create: `src/clipper/wrappers/claude_code.py`
-- Create: `src/clipper/wrappers/hermes.py`
+- Create: `src/clippos/wrappers/common.py`
+- Create: `src/clippos/wrappers/codex.py`
+- Create: `src/clippos/wrappers/claude_code.py`
+- Create: `src/clippos/wrappers/hermes.py`
 - Create: `tests/test_wrappers.py`
 
 - [ ] **Step 1: Write the failing wrapper normalization test**
 
 ```python
-from clipper.wrappers.codex import codex_job_from_args
+from clippos.wrappers.codex import codex_job_from_args
 
 
 def test_codex_wrapper_builds_common_job(tmp_path) -> None:
@@ -1057,8 +1057,8 @@ Expected: FAIL with missing wrapper modules
 - [ ] **Step 3: Implement the shared normalization helper**
 
 ```python
-def build_common_job(video_path: str, output_dir: str) -> ClipperJob:
-    return ClipperJob.model_validate(
+def build_common_job(video_path: str, output_dir: str) -> ClipposJob:
+    return ClipposJob.model_validate(
         {
             "video_path": video_path,
             "output_dir": output_dir,
@@ -1071,22 +1071,22 @@ def build_common_job(video_path: str, output_dir: str) -> ClipperJob:
 - [ ] **Step 4: Add per-wrapper entry helpers**
 
 ```python
-def codex_job_from_args(video_path: str, output_dir: str) -> ClipperJob:
+def codex_job_from_args(video_path: str, output_dir: str) -> ClipposJob:
     return build_common_job(video_path, output_dir)
 
 
-def claude_job_from_args(video_path: str, output_dir: str) -> ClipperJob:
+def claude_job_from_args(video_path: str, output_dir: str) -> ClipposJob:
     return build_common_job(video_path, output_dir)
 
 
-def hermes_job_from_args(video_path: str, output_dir: str) -> ClipperJob:
+def hermes_job_from_args(video_path: str, output_dir: str) -> ClipposJob:
     return build_common_job(video_path, output_dir)
 ```
 
 - [ ] **Step 5: Add the missing wrapper test file**
 
 ```python
-from clipper.wrappers.hermes import hermes_job_from_args
+from clippos.wrappers.hermes import hermes_job_from_args
 
 
 def test_hermes_wrapper_uses_common_defaults(tmp_path) -> None:
@@ -1102,7 +1102,7 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/clipper/wrappers tests/test_wrappers.py
+git add src/clippos/wrappers tests/test_wrappers.py
 git commit -m "feat: add thin wrappers for supported agent harnesses"
 ```
 
@@ -1126,10 +1126,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from clipper.models.candidate import CandidateClip
-from clipper.models.job import ClipperJob
-from clipper.pipeline.transcribe import build_transcript_timeline
-from clipper.pipeline.vision import build_vision_timeline
+from clippos.models.candidate import CandidateClip
+from clippos.models.job import ClipposJob
+from clippos.pipeline.transcribe import build_transcript_timeline
+from clippos.pipeline.vision import build_vision_timeline
 
 
 @pytest.fixture
@@ -1175,11 +1175,11 @@ def sample_vision_timeline(sample_face_payload: dict):
 
 
 @pytest.fixture
-def sample_job(tmp_path: Path, sample_job_payload: dict) -> ClipperJob:
+def sample_job(tmp_path: Path, sample_job_payload: dict) -> ClipposJob:
     payload = dict(sample_job_payload)
     payload["video_path"] = str(tmp_path / "input.mp4")
     payload["output_dir"] = str(tmp_path / "out")
-    job = ClipperJob.model_validate(payload)
+    job = ClipposJob.model_validate(payload)
     object.__setattr__(job, "mock_transcript", {
         "segments": [
             {
@@ -1239,7 +1239,7 @@ Expected: PASS
 
 - [ ] **Step 7: Add coverage output**
 
-Run: `pytest --cov=src/clipper --cov-report=term-missing`
+Run: `pytest --cov=src/clippos --cov-report=term-missing`
 Expected: line coverage report with the pipeline modules listed
 
 - [ ] **Step 8: Commit**
@@ -1273,7 +1273,7 @@ git commit -m "test: add shared fixtures and end-to-end happy path coverage"
 ```markdown
 ## Run a job
 
-`python -m clipper.cli run /absolute/path/job.json`
+`python -m clippos.cli run /absolute/path/job.json`
 ```
 
 - [ ] **Step 3: Document current v1 limitations**
@@ -1314,5 +1314,5 @@ git commit -m "docs: document clipper architecture and local workflow"
 ## Self-Review Notes
 
 - Placeholder scan: no deferred implementation markers remain in the plan.
-- Type consistency: `ClipperJob`, `CandidateClip`, `ReviewManifest`, and `RenderManifest` are introduced before later tasks use them.
+- Type consistency: `ClipposJob`, `CandidateClip`, `ReviewManifest`, and `RenderManifest` are introduced before later tasks use them.
 - Scope check: the plan stays within one v1 subsystem boundary and does not branch into hosting, publishing, or brand-specific caption theming.

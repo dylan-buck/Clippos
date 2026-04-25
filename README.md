@@ -1,4 +1,4 @@
-# Clipper Tool
+# Clippos
 
 Turn any long-form video into captioned, viral-ready social clips with a
 single `/clip` call in your agent. Ships as a skill for
@@ -24,21 +24,21 @@ Designed Hermes-first. Works anywhere.
 Shortest path:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dylan-buck/clipping-tool/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dylan-buck/Clippos/main/install.sh | bash
 ```
 
-That clones the repo into `~/.local/share/clipping-tool`, creates `.venv`,
+That clones the repo into `~/.local/share/clippos`, creates `.venv`,
 installs the engine extras, and links the `clip` skill into Hermes, Claude
 Code, and Codex skill directories. Tune it with environment variables, e.g.
-`CLIPPER_HARNESS=hermes`, `CLIPPER_INSTALL_DIR=/path/to/clipping-tool`, or
-`CLIPPER_EXTRAS=none`.
+`CLIPPOS_HARNESS=hermes`, `CLIPPOS_INSTALL_DIR=/path/to/clippos`, or
+`CLIPPOS_EXTRAS=none`.
 
 | Harness            | Install                                                                             | Command surface                          |
 | ------------------ | ----------------------------------------------------------------------------------- | ---------------------------------------- |
-| **Hermes**         | `CLIPPER_HARNESS=hermes curl -fsSL .../install.sh \| bash` or symlink manually      | `/clip`, `/clip config`, `/clip package` |
-| **Claude Code**    | `CLIPPER_HARNESS=claude curl -fsSL .../install.sh \| bash` or plugin install        | `/clip`, `/clip-config`, `/clip-package` |
-| **Codex**          | `CLIPPER_HARNESS=codex curl -fsSL .../install.sh \| bash` or plugin loader          | `/clip`, `/clip-config`, `/clip-package` |
-| **Any harness**    | Clone the repo, export `CLIPPER_ROOT=/abs/path/to/clipping-tool`, run the scripts   | `hermes_clip.py advance --source ...`    |
+| **Hermes**         | `CLIPPOS_HARNESS=hermes curl -fsSL .../install.sh \| bash` or symlink manually      | `/clip`, `/clip config`, `/clip package` |
+| **Claude Code**    | `CLIPPOS_HARNESS=claude curl -fsSL .../install.sh \| bash` or plugin install        | `/clip`, `/clip-config`, `/clip-package` |
+| **Codex**          | `CLIPPOS_HARNESS=codex curl -fsSL .../install.sh \| bash` or plugin loader          | `/clip`, `/clip-config`, `/clip-package` |
+| **Any harness**    | Clone the repo, export `CLIPPOS_ROOT=/abs/path/to/clippos`, run the scripts         | `hermes_clip.py advance --source ...`    |
 
 All four install paths resolve to the same `SKILL.md` and the same helper
 scripts. The one-liner does the local engine setup; manual installs can use
@@ -59,7 +59,7 @@ the installed skill directory. Typical flow:
 ```text
 /clip /absolute/path/video.mp4
 /clip https://cdn.discordapp.com/attachments/... --ratios 9:16,1:1 --clips 2
-/clip config --output-dir ~/Documents/ClipperTool
+/clip config --output-dir ~/Documents/Clippos
 /clip package
 ```
 
@@ -72,7 +72,7 @@ If you have Claude Code's plugin system:
 
 ```bash
 # Quickest — point Claude Code at the local plugin
-/plugin install /absolute/path/to/clipping-tool/.claude-plugin
+/plugin install /absolute/path/to/clippos/.claude-plugin
 ```
 
 Or copy the repo into `~/.claude/skills/clip`. Claude Code exposes three
@@ -80,7 +80,7 @@ slash commands via the `commands/*.md` shims:
 
 ```text
 /clip /absolute/path/video.mp4
-/clip-config --output-dir ~/Documents/ClipperTool
+/clip-config --output-dir ~/Documents/Clippos
 /clip-package
 ```
 
@@ -100,17 +100,17 @@ If you're running a harness without a built-in plugin system (custom agent
 framework, bare terminal, a provider SDK), install manually:
 
 ```bash
-git clone https://github.com/dylan-buck/clipping-tool
-cd clipping-tool
+git clone https://github.com/dylan-buck/Clippos
+cd Clippos
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e ".[engine,dev]"
-export CLIPPER_ROOT="$(pwd)"
+export CLIPPOS_ROOT="$(pwd)"
 ```
 
 Then drive the pipeline with `hermes_clip.py`:
 
 ```bash
-"$CLIPPER_ROOT/.venv/bin/python" "$CLIPPER_ROOT/scripts/hermes_clip.py" \
+"$CLIPPOS_ROOT/.venv/bin/python" "$CLIPPOS_ROOT/scripts/hermes_clip.py" \
   advance --source /absolute/path/video.mp4
 ```
 
@@ -164,9 +164,9 @@ inputs do not blow up memory — only duration scales peak RAM.
 
 Pick any known-good local video 5–10 minutes long.
 
-1. **Install.** `curl -fsSL https://raw.githubusercontent.com/dylan-buck/clipping-tool/main/install.sh | bash`.
+1. **Install.** `curl -fsSL https://raw.githubusercontent.com/dylan-buck/Clippos/main/install.sh | bash`.
 2. **Configure** (optional). In your agent, run `/clip config --output-dir
-   ~/Documents/ClipperTool` (Hermes) or `/clip-config ...` (Claude Code /
+   ~/Documents/Clippos` (Hermes) or `/clip-config ...` (Claude Code /
    Codex). Writes the `.env`. **No HuggingFace token needed** —
    diarization uses the open-source SpeechBrain stack by default.
 3. **Clip.** Run `/clip ~/Downloads/sample-talk.mp4 --ratios 9:16,1:1`.
@@ -184,12 +184,12 @@ Pick any known-good local video 5–10 minutes long.
 
 ## Configuration
 
-Skill configuration lives at `~/.config/clipper-tool/.env`. Write it
+Skill configuration lives at `~/.config/clippos/.env`. Write it
 through the skill rather than hand-editing:
 
 ```bash
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-write \
-  --output-dir "$HOME/Documents/ClipperTool" \
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-write \
+  --output-dir "$HOME/Documents/Clippos" \
   --ratios "9:16,1:1,16:9" \
   --approve-top 5 \
   --min-score 0.70
@@ -198,22 +198,22 @@ through the skill rather than hand-editing:
 Supported keys (all optional):
 
 ```env
-CLIPPER_OUTPUT_DIR=~/Documents/ClipperTool   # where MP4s land
-CLIPPER_RATIOS=9:16,1:1,16:9                 # default render set
-CLIPPER_MAX_CANDIDATES=12                    # mining cap per video
-CLIPPER_APPROVE_TOP=5                        # auto-approve top N scores
-CLIPPER_MIN_SCORE=0.70                       # threshold for top-N selection
+CLIPPOS_OUTPUT_DIR=~/Documents/Clippos       # where MP4s land
+CLIPPOS_RATIOS=9:16,1:1,16:9                 # default render set
+CLIPPOS_MAX_CANDIDATES=12                    # mining cap per video
+CLIPPOS_APPROVE_TOP=5                        # auto-approve top N scores
+CLIPPOS_MIN_SCORE=0.70                       # threshold for top-N selection
 
 # Optional. Default diarizer is open-source SpeechBrain (no token needed).
-# Set CLIPPER_DIARIZER=pyannote and HF_TOKEN to opt into the pyannote upgrade.
-CLIPPER_DIARIZER=speechbrain
+# Set CLIPPOS_DIARIZER=pyannote and HF_TOKEN to opt into the pyannote upgrade.
+CLIPPOS_DIARIZER=speechbrain
 HF_TOKEN=hf_...
 ```
 
 Per-job knobs (passed at invocation, not persisted):
 
 - `--ratios 9:16,1:1` — render only the listed ratios
-- `--clips 3` — auto-approve the top N (overrides `CLIPPER_APPROVE_TOP`)
+- `--clips 3` — auto-approve the top N (overrides `CLIPPOS_APPROVE_TOP`)
 - `--min-score 0.6` — lower the auto-approve threshold for this run
 - `--max-candidates 8` — cap mining for this run
 
@@ -223,8 +223,8 @@ deterministic and does not use the agent's model. Narrow the set with
 
 ## Output locations
 
-By default, all artifacts land under `~/Documents/ClipperTool/jobs/<job_id>/`.
-Override with `--output-dir` at job time or set `CLIPPER_OUTPUT_DIR` in
+By default, all artifacts land under `~/Documents/Clippos/jobs/<job_id>/`.
+Override with `--output-dir` at job time or set `CLIPPOS_OUTPUT_DIR` in
 your config. The `<job_id>` is a SHA-1 of the source video path —
 re-running on the same path reuses the same workspace and skips
 already-cached stages.
@@ -232,7 +232,7 @@ already-cached stages.
 Per-job workspace layout:
 
 ```text
-~/Documents/ClipperTool/jobs/<job_id>/
+~/Documents/Clippos/jobs/<job_id>/
 ├── transcript.json              # WhisperX output (cached)
 ├── vision.json                  # face / motion / scene-cut signals (cached)
 ├── brief-request.json           # ← engine writes; harness authors brief
@@ -393,7 +393,7 @@ Run the gated real-video E2E check when you want to validate the
 production path on an actual file:
 
 ```bash
-export CLIPPER_E2E_VIDEO=/absolute/path/to/5-10-minute-video.mp4
+export CLIPPOS_E2E_VIDEO=/absolute/path/to/5-10-minute-video.mp4
 .venv/bin/pytest -m e2e -v
 ```
 
@@ -401,10 +401,10 @@ export CLIPPER_E2E_VIDEO=/absolute/path/to/5-10-minute-video.mp4
 
 For non-harness use, drive the pipeline directly with the CLI:
 
-- `python -m clipper.cli version`
-- `python -m clipper.cli run /absolute/path/job.json [--stage mine|brief|review|render|auto]`
+- `python -m clippos.cli version`
+- `python -m clippos.cli run /absolute/path/job.json [--stage mine|brief|review|render|auto]`
 
-`run` reads a job file, validates it against the shared `ClipperJob`
+`run` reads a job file, validates it against the shared `ClipposJob`
 contract, and executes the requested pipeline stage. `--stage` defaults
 to `auto`.
 

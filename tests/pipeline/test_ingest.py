@@ -3,14 +3,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from clipper.models.job import ClipperJob
-from clipper.pipeline.ingest import ingest_job
+from clippos.models.job import ClipposJob
+from clippos.pipeline.ingest import ingest_job
 
 
 def test_ingest_job_builds_workspace_and_probe_result(tmp_path: Path) -> None:
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
-    job = ClipperJob(video_path=video, output_dir=tmp_path / "out")
+    job = ClipposJob(video_path=video, output_dir=tmp_path / "out")
 
     result = ingest_job(
         job,
@@ -30,7 +30,7 @@ def test_ingest_job_builds_workspace_and_probe_result(tmp_path: Path) -> None:
 def test_ingest_job_uses_stable_job_id(tmp_path: Path) -> None:
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
-    job = ClipperJob(video_path=video, output_dir=tmp_path / "out")
+    job = ClipposJob(video_path=video, output_dir=tmp_path / "out")
 
     one = ingest_job(
         job,
@@ -61,10 +61,10 @@ def test_ingest_job_normalizes_raw_ffprobe_payload(
 ) -> None:
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
-    job = ClipperJob(video_path=video, output_dir=tmp_path / "out")
+    job = ClipposJob(video_path=video, output_dir=tmp_path / "out")
 
     monkeypatch.setattr(
-        "clipper.pipeline.ingest.probe_media",
+        "clippos.pipeline.ingest.probe_media",
         lambda _path: {
             "format": {"duration": "120.0"},
             "streams": [
@@ -98,7 +98,7 @@ def test_ingest_job_does_not_create_workspace_on_probe_validation_failure(
 ) -> None:
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
-    job = ClipperJob(video_path=video, output_dir=tmp_path / "out")
+    job = ClipposJob(video_path=video, output_dir=tmp_path / "out")
 
     with pytest.raises(ValidationError):
         ingest_job(
@@ -123,8 +123,8 @@ def test_ingest_job_uses_same_job_id_for_equivalent_path_spellings(
 
     monkeypatch.chdir(tmp_path)
 
-    absolute_job = ClipperJob(video_path=video, output_dir=tmp_path / "out")
-    relative_job = ClipperJob(video_path=Path("input.mp4"), output_dir=tmp_path / "out")
+    absolute_job = ClipposJob(video_path=video, output_dir=tmp_path / "out")
+    relative_job = ClipposJob(video_path=Path("input.mp4"), output_dir=tmp_path / "out")
 
     absolute_result = ingest_job(
         absolute_job,
@@ -177,9 +177,9 @@ def test_ingest_job_uses_canonical_path_for_live_probe_call(
             ],
         }
 
-    monkeypatch.setattr("clipper.pipeline.ingest.probe_media", fake_probe_media)
+    monkeypatch.setattr("clippos.pipeline.ingest.probe_media", fake_probe_media)
 
-    job = ClipperJob(video_path=Path("~/input.mp4"), output_dir=tmp_path / "out")
+    job = ClipposJob(video_path=Path("~/input.mp4"), output_dir=tmp_path / "out")
 
     ingest_job(job)
 

@@ -20,7 +20,7 @@ import pytest
 np = pytest.importorskip("numpy")
 pd = pytest.importorskip("pandas")
 
-from clipper.adapters import speechbrain_diarize as sd  # noqa: E402
+from clippos.adapters import speechbrain_diarize as sd  # noqa: E402
 
 # The end-to-end stubbed tests still need a real torch.from_numpy + no_grad
 # context manager + Tensor methods, which is too much surface to stub.
@@ -296,7 +296,7 @@ def test_diarize_audio_uses_default_cache_dir_when_none_configured(
     stub_speechbrain_stack: dict[str, Any],
     tmp_path: Path,
 ) -> None:
-    """The shared cache lives at ~/.cache/clipper-tool/speechbrain by
+    """The shared cache lives at ~/.cache/clippos/speechbrain by
     default so first-run model weights aren't strewn under whatever CWD the
     user happened to be in when they typed `/clip`."""
     fake_default = tmp_path / "default-cache"

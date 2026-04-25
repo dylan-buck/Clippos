@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from clipper.pipeline.candidates import (
+from clippos.pipeline.candidates import (
     DurationPolicy,
     MiningConfig,
     ScoringWeights,
@@ -28,8 +28,8 @@ from clipper.pipeline.candidates import (
     score_shot_change_density,
     score_speaker_interaction,
 )
-from clipper.pipeline.transcribe import build_transcript_timeline
-from clipper.pipeline.vision import build_vision_timeline
+from clippos.pipeline.transcribe import build_transcript_timeline
+from clippos.pipeline.vision import build_vision_timeline
 
 
 @pytest.fixture
@@ -162,7 +162,7 @@ def test_score_payoff_signal_matches_phrases_and_keywords() -> None:
 
 
 def test_score_question_to_answer_requires_question_in_first_half() -> None:
-    from clipper.pipeline.transcribe import build_transcript_timeline
+    from clippos.pipeline.transcribe import build_transcript_timeline
 
     timeline = build_transcript_timeline(
         {
@@ -218,7 +218,7 @@ def test_score_speaker_interaction_rewards_back_and_forth(
 
 
 def test_score_delivery_variance_needs_word_gaps() -> None:
-    from clipper.pipeline.transcribe import build_transcript_timeline
+    from clippos.pipeline.transcribe import build_transcript_timeline
 
     jitter_timeline = build_transcript_timeline(
         {
@@ -268,7 +268,7 @@ def test_has_buried_lead_detects_phrases() -> None:
 
 
 def test_has_dangling_question_flags_unanswered_tail(long_transcript_timeline) -> None:
-    from clipper.pipeline.transcribe import build_transcript_timeline
+    from clippos.pipeline.transcribe import build_transcript_timeline
 
     dangling = build_transcript_timeline(
         {

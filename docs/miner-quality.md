@@ -1,6 +1,6 @@
 # Miner quality improvements
 
-The candidate miner in `src/clipper/pipeline/candidates.py` is
+The candidate miner in `src/clippos/pipeline/candidates.py` is
 calibrated for viral-monologue patterns (single-speaker, hook-driven,
 high-keyword-density). It systematically under-emits candidates from
 multi-speaker interview / podcast / guest-Q&A content, even when that

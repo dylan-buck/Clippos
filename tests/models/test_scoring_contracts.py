@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from clipper.models.scoring import (
+from clippos.models.scoring import (
     ClipBrief,
     ClipScore,
     MiningSignals,

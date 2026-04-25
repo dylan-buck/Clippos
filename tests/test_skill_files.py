@@ -32,7 +32,7 @@ def test_readme_documents_install_one_liner() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "install.sh | bash" in readme
-    assert "CLIPPER_HARNESS" in readme
+    assert "CLIPPOS_HARNESS" in readme
 
 
 def test_skill_is_hermes_first_with_claude_codex_fallback() -> None:

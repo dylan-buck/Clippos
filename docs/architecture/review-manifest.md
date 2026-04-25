@@ -42,4 +42,4 @@ The harness-side input is produced during the scoring handoff. `run_job(..., sta
 
 ## Persistence
 
-`run_job(...)` currently persists this package to `<output_dir>/jobs/<job_id>/review-manifest.json` with `clipper.adapters.storage.write_json(...)`, typically using `manifest.model_dump(mode="json")` as the payload.
+`run_job(...)` currently persists this package to `<output_dir>/jobs/<job_id>/review-manifest.json` with `clippos.adapters.storage.write_json(...)`, typically using `manifest.model_dump(mode="json")` as the payload.
