@@ -239,7 +239,29 @@ def cmd_advance(args: argparse.Namespace) -> int:
         state = _detect_state(workspace)
         _status("Candidate mining complete.", workspace=workspace)
 
+    if state == "needs-brief":
+        # v1.1: pause for the harness to author the video brief before
+        # scoring. Skipped when the job has output_profile.video_brief=False
+        # (then mine doesn't write brief-request.json and _detect_state
+        # never returns "needs-brief").
+        _status("Waiting on harness video-brief handoff.", workspace=workspace)
+        _emit(_brief_handoff(workspace))
+        return 0
+
     if state == "needs-scoring":
+        # v1.1: if a brief response just landed (or a cached brief is
+        # available), embed it into scoring-request.json before emitting
+        # the scoring handoff. The CLI brief stage is idempotent and
+        # cheap, so running it unconditionally is safe — it returns
+        # quickly when no brief is enabled / available.
+        if (workspace / "brief-request.json").exists():
+            try:
+                _run_cli_stage(require_job_path(), "brief", workspace=workspace)
+            except HermesClipError:
+                # If the brief stage fails (response missing/invalid),
+                # surface the error rather than silently scoring without
+                # the brief.
+                raise
         _status("Waiting on harness scoring handoff.", workspace=workspace)
         _emit(_scoring_handoff(workspace, history_path=args.history))
         return 0
@@ -353,6 +375,16 @@ def cmd_latest_workspace(args: argparse.Namespace) -> int:
 def _detect_state(workspace: Path) -> str:
     if not (workspace / "scoring-request.json").exists():
         return "needs-mine"
+    # v1.1 brief stage. Sequenced AFTER scoring-request.json exists
+    # because mine writes both files in a single pass. The brief is a
+    # gating handoff: harness must author brief-response.json before
+    # we proceed to scoring. When the brief is disabled (no
+    # brief-request.json was written), we skip these states entirely.
+    if (workspace / "brief-request.json").exists():
+        if not (workspace / "brief-response.json").exists() and not (
+            workspace / "brief-cache.json"
+        ).exists():
+            return "needs-brief"
     if not (workspace / "scoring-response.json").exists():
         return "needs-scoring"
     if not (workspace / "review-manifest.json").exists():
@@ -370,6 +402,32 @@ def _detect_state(workspace: Path) -> str:
     if not (workspace / "package-response.json").exists():
         return "needs-packaging"
     return "needs-package-save"
+
+
+def _brief_handoff(workspace: Path) -> dict[str, Any]:
+    """v1.1 (docs/v1.1.md): one model handoff per video to author a
+    pre-scoring VideoBrief. Mirrors _scoring_handoff shape so the
+    harness loop pattern is the same: read request, write response,
+    re-run advance.
+    """
+    request_path = workspace / "brief-request.json"
+    response_path = workspace / "brief-response.json"
+    return {
+        "next_action": "brief",
+        "workspace": str(workspace),
+        "handoff_request_path": str(request_path),
+        "handoff_response_path": str(response_path),
+        "instructions": (
+            "Read the brief request, follow its embedded `brief_prompt` "
+            "and `response_schema`, author a one-paragraph VideoBrief "
+            "synthesizing the video's spine + expected viral patterns + "
+            "anti-patterns, then write the response file and rerun "
+            "`advance`. The brief is one handoff per video and is cached "
+            "for the rest of this workspace's lifetime — keep it tight "
+            "and opinionated. The per-clip scorer reads this brief and "
+            "uses it to bias scores toward on-thesis moments."
+        ),
+    }
 
 
 def _scoring_handoff(workspace: Path, *, history_path: Path) -> dict[str, Any]:

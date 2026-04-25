@@ -11,7 +11,15 @@ from clipper.models.candidate import CandidateClip
 from clipper.models.job import ClipperJob
 from clipper.models.render import RenderManifest
 from clipper.models.review import ReviewManifest
-from clipper.models.scoring import ClipBrief
+from clipper.models.scoring import ClipBrief, VideoBrief
+from clipper.pipeline.brief import (
+    BriefResponseError,
+    brief_request_path,
+    build_brief_request,
+    load_brief_request,
+    resolve_brief,
+    write_brief_request,
+)
 from clipper.pipeline.candidates import mine_windows, to_candidate_clip
 from clipper.pipeline.ingest import IngestResult, ingest_job
 from clipper.pipeline.render import (
@@ -32,8 +40,8 @@ from clipper.pipeline.scoring import (
 from clipper.pipeline.transcribe import build_transcript_timeline, run_transcription
 from clipper.pipeline.vision import build_vision_timeline, run_vision
 
-Stage = Literal["mine", "review", "render", "auto"]
-VALID_STAGES: tuple[Stage, ...] = ("mine", "review", "render", "auto")
+Stage = Literal["mine", "brief", "review", "render", "auto"]
+VALID_STAGES: tuple[Stage, ...] = ("mine", "brief", "review", "render", "auto")
 
 REVIEW_MANIFEST_FILENAME = "review-manifest.json"
 RENDER_REPORT_FILENAME = "render-report.json"
@@ -92,11 +100,45 @@ def run_job(job: ClipperJob, *, stage: Stage = "auto") -> Path:
     if stage == "review":
         return _finalize_review_stage(ingest, canonical_video_path, workspace_dir)
 
+    if stage == "brief":
+        # Standalone brief stage: rebuilds scoring-request.json with the
+        # brief embedded, assuming brief-response.json has been written
+        # by the harness. Useful for raw-CLI users who want to drive the
+        # brief handoff without going through `auto`.
+        return _finalize_brief_stage(
+            ingest=ingest,
+            video_path=canonical_video_path,
+            workspace_dir=workspace_dir,
+        )
+
     request_path = _run_mine_stage(
         resolved_job, ingest, canonical_video_path, workspace_dir
     )
     if stage == "mine":
         return request_path
+
+    # v1.1 brief stage (gated on output_profile.video_brief). Auto pauses
+    # here when brief is enabled and the harness has not yet authored
+    # brief-response.json — same pattern as the scoring handoff below.
+    if resolved_job.output_profile.video_brief:
+        try:
+            brief = resolve_brief(workspace_dir)
+        except BriefResponseError:
+            # Surface invalid brief responses; the caller (CLI / hermes)
+            # decides how to present this. Returning the brief request
+            # path here would mask the real error.
+            raise
+        if brief is None:
+            # Waiting on harness brief authoring. Return the brief
+            # request path so the caller knows where to look.
+            return brief_request_path(workspace_dir)
+        # Brief resolved — embed it into scoring-request.json so the
+        # harness scoring step sees it. Idempotent: re-runs with the
+        # same brief produce the same scoring-request.json content.
+        _rewrite_scoring_request_with_brief(
+            workspace_dir=workspace_dir,
+            brief=brief,
+        )
 
     model_scores = score_shortlist(workspace_dir)
     if model_scores is None:
@@ -134,7 +176,76 @@ def _run_mine_stage(
         video_path=video_path,
         briefs=briefs,
     )
-    return write_scoring_request(workspace_dir, request)
+    request_path = write_scoring_request(workspace_dir, request)
+    # v1.1: also write brief-request.json so the harness has the prompt
+    # ready when video_brief is enabled. We always write the request so
+    # the harness can author a brief even if the orchestrator is later
+    # invoked with video_brief=False; the consumer chooses whether to
+    # use the result.
+    if resolved_job.output_profile.video_brief:
+        brief_request = build_brief_request(
+            job_id=ingest.job_id,
+            video_path=video_path,
+            transcript_timeline=transcript,
+        )
+        write_brief_request(workspace_dir, brief_request)
+    return request_path
+
+
+def _finalize_brief_stage(
+    *,
+    ingest: IngestResult,
+    video_path: Path,
+    workspace_dir: Path,
+) -> Path:
+    """Re-write scoring-request.json with the resolved brief embedded.
+
+    Assumes mine has run (scoring-request.json exists) and the harness
+    has produced a valid brief-response.json. Returns the path to the
+    rewritten scoring-request.json. Used by ``--stage brief`` CLI
+    invocations and by the auto stage path when the brief becomes
+    available.
+    """
+    if load_brief_request(workspace_dir) is None:
+        raise BriefResponseError(
+            "stage=brief requires brief-request.json; run stage=mine first "
+            "with output_profile.video_brief=True"
+        )
+    try:
+        brief = resolve_brief(workspace_dir)
+    except BriefResponseError:
+        raise
+    if brief is None:
+        raise BriefResponseError(
+            "stage=brief requires brief-response.json (or a cached brief "
+            "matching the current rubric_version + job_id)"
+        )
+    return _rewrite_scoring_request_with_brief(
+        workspace_dir=workspace_dir,
+        brief=brief,
+    )
+
+
+def _rewrite_scoring_request_with_brief(
+    *,
+    workspace_dir: Path,
+    brief: VideoBrief,
+) -> Path:
+    """Update scoring-request.json so it carries the resolved video_brief.
+
+    Idempotent: if the existing request already embeds the same brief,
+    we still rewrite (cheap; preserves canonical formatting). The clip
+    list and rubric_prompt are preserved verbatim — the only change is
+    the video_brief field.
+    """
+    request = load_scoring_request(workspace_dir)
+    if request is None:
+        raise ScoringResponseError(
+            "Cannot embed brief into scoring-request.json — file is missing "
+            "or invalid; run stage=mine first"
+        )
+    updated = request.model_copy(update={"video_brief": brief})
+    return write_scoring_request(workspace_dir, updated)
 
 
 def _finalize_review_stage(

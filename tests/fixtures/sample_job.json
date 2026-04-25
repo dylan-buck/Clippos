@@ -5,6 +5,7 @@
   "max_candidates": 3,
   "output_profile": {
     "ratios": ["9:16", "1:1", "16:9"],
-    "caption_preset": "hook-default"
+    "caption_preset": "hook-default",
+    "video_brief": false
   }
 }

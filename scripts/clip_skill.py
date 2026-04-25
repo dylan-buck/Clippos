@@ -540,10 +540,14 @@ def cmd_package_prompt(args: argparse.Namespace) -> int:
             f"{workspace}/review-manifest.json has no approved candidates to package"
         )
 
+    # v1.1: pass through the video_brief from the scoring request so
+    # packaging gets the same global frame the scorer used. Falls back
+    # to None when the brief stage was skipped.
     request = build_package_request(
         job_id=review.job_id,
         video_path=review.video_path,
         briefs=briefs,
+        video_brief=scoring_request.video_brief,
     )
     request_path = write_package_request(workspace, request)
 

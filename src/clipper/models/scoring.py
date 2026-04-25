@@ -89,6 +89,51 @@ class ClipBrief(ContractModel):
         return self
 
 
+class VideoBrief(ContractModel):
+    """The harness model's pre-scoring synthesis of what makes THIS video
+    clippable (v1.1, see docs/v1.1.md).
+
+    Authored once per video, before per-clip scoring. Attached to the
+    scoring + packaging requests as additional context so per-clip
+    judgement can be aware of the global thesis. Cached per workspace
+    so re-running scoring does not re-pay the brief cost.
+    """
+
+    rubric_version: str
+    job_id: str
+    theme: Annotated[str, Field(min_length=1)]
+    video_format: Annotated[str, Field(min_length=1)]
+    expected_viral_patterns: list[str]
+    anti_patterns: list[str] = Field(default_factory=list)
+    audience: str | None = None
+    tone: str | None = None
+    notes: str | None = None
+
+
+class VideoBriefRequest(ContractModel):
+    """Handoff payload sent to the harness model to author a VideoBrief."""
+
+    rubric_version: str
+    job_id: str
+    video_path: Path
+    transcript_excerpt: str
+    transcript_truncated: bool
+    duration_seconds: Annotated[float, Field(ge=0)]
+    speakers: list[str]
+    brief_prompt: str
+    response_schema: dict
+
+
+class VideoBriefResponse(ContractModel):
+    """Wrapper around the brief produced by the harness model. Mirrors
+    ScoringResponse / PackageResponse shape so callers can use the same
+    rubric_version / job_id integrity checks."""
+
+    rubric_version: str
+    job_id: str
+    brief: VideoBrief
+
+
 class ScoringRequest(ContractModel):
     rubric_version: str
     job_id: str
@@ -96,6 +141,12 @@ class ScoringRequest(ContractModel):
     rubric_prompt: str
     response_schema: dict
     clips: list[ClipBrief]
+    # v1.1: optional global frame produced by the brief stage. None when
+    # the brief stage was skipped (output_profile.video_brief=False) or
+    # when the harness has not yet produced the brief response. Old
+    # scoring-request.json files predating v1.1 lack this field; the
+    # default keeps them loadable.
+    video_brief: VideoBrief | None = None
 
 
 class RubricScores(ContractModel):

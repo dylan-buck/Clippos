@@ -209,7 +209,33 @@ Use `--ratios 9:16,1:1` or `--clips 2` only when the user asks. The payload
 contains `workspace`, `next_action`, and—when a model handoff is required—
 `handoff_request_path` and `handoff_response_path`.
 
-2. When `next_action == "score"`:
+2. When `next_action == "brief"` (v1.1):
+
+- Read the request at `handoff_request_path` (`brief-request.json`).
+- Follow its embedded `brief_prompt` and `response_schema`.
+- Read the `transcript_excerpt`. The full transcript is provided when
+  short; for long videos, `transcript_truncated: true` and the excerpt
+  contains the head + tail with a marker where the middle was dropped.
+  Infer the global shape from what you can see plus `speakers` +
+  `duration_seconds`.
+- Author a tight, opinionated `VideoBrief`: `theme`, `video_format`,
+  3–5 `expected_viral_patterns`, 0–3 `anti_patterns`, optional
+  `audience` / `tone` / `notes`. The brief must be *scoring-relevant*
+  — what to up-weight and down-weight in this specific video — not a
+  summary.
+- Write `handoff_response_path` (`brief-response.json`) with a valid
+  `VideoBriefResponse`.
+- Re-run advance on the workspace. The brief is cached for the rest
+  of the workspace's lifetime; the next per-clip scoring call sees
+  the brief as `video_brief` on the scoring request.
+
+This step is one model call per video and is the highest-leverage
+moment in the loop — it is where the agent's context-synthesis
+ability outperforms the per-clip rubric. Skip it only when
+`next_action != "brief"` (i.e. `output_profile.video_brief: false`
+in the job).
+
+3. When `next_action == "score"`:
 
 - Read the request at `handoff_request_path`.
 - Follow its embedded `rubric_prompt` and `response_schema`.
@@ -233,7 +259,7 @@ contains `workspace`, `next_action`, and—when a model handoff is required—
   above the configured threshold, fills from the next-best clips when needed
   to reach the requested count, and renders the approved clips.
 
-3. When `next_action == "done-renders"`, the payload includes `clips_dir`,
+4. When `next_action == "done-renders"`, the payload includes `clips_dir`,
    `clips[]` with `renders` keyed by ratio, and a `feedback_prompt` with the
    clip IDs. Return the MP4 paths plus the clips directory and workspace path
    to the user, then ask which clips they kept or plan to post. Pipe the
@@ -241,7 +267,7 @@ contains `workspace`, `next_action`, and—when a model handoff is required—
    the creator profile keeps learning. Mention if any requested ratio was
    skipped.
 
-4. When `next_action == "error"`, surface the `error` string and the `stage`
+5. When `next_action == "error"`, surface the `error` string and the `stage`
    it happened in. Do not retry silently—diagnose or ask the user.
 
 ### Deterministic fallback (raw primitives)

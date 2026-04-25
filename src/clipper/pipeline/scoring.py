@@ -19,6 +19,7 @@ from clipper.models.scoring import (
     MiningSignals,
     ScoringRequest,
     ScoringResponse,
+    VideoBrief,
 )
 from clipper.pipeline.candidates import ScoredWindow
 from clipper.pipeline.transcribe import TranscriptSegment
@@ -96,6 +97,7 @@ def build_scoring_request(
     video_path: Path,
     briefs: list[ClipBrief],
     rubric_version: str = RUBRIC_VERSION,
+    video_brief: VideoBrief | None = None,
 ) -> ScoringRequest:
     return ScoringRequest(
         rubric_version=rubric_version,
@@ -104,6 +106,7 @@ def build_scoring_request(
         rubric_prompt=build_rubric_prompt(),
         response_schema=build_response_schema(),
         clips=briefs,
+        video_brief=video_brief,
     )
 
 

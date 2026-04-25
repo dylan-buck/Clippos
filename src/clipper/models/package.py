@@ -6,6 +6,7 @@ from typing import Annotated
 from pydantic import Field, field_validator, model_validator
 
 from clipper.models.media import ContractModel
+from clipper.models.scoring import VideoBrief
 
 PACKAGE_PROMPT_VERSION = "package-v1"
 
@@ -54,6 +55,12 @@ class PackageRequest(ContractModel):
     package_prompt: str
     response_schema: dict
     clips: list[PackageBrief]
+    # v1.1: same global frame attached to scoring requests, also passed
+    # through here so the model can author titles/captions/hashtags that
+    # match the video's overall thesis. Optional (None when brief stage
+    # was skipped or not yet run); old package-request.json files load
+    # cleanly because the field is optional with a default.
+    video_brief: VideoBrief | None = None
 
 
 class PublishPack(ContractModel):

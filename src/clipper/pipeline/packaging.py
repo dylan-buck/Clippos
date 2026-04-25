@@ -36,7 +36,7 @@ from clipper.models.package import (
     PublishPack,
 )
 from clipper.models.review import ReviewManifest
-from clipper.models.scoring import ClipBrief, ScoringRequest
+from clipper.models.scoring import ClipBrief, ScoringRequest, VideoBrief
 
 PACKAGE_REQUEST_FILENAME = "package-request.json"
 PACKAGE_RESPONSE_FILENAME = "package-response.json"
@@ -185,6 +185,7 @@ def build_package_request(
     video_path: Path,
     briefs: list[PackageBrief],
     prompt_version: str = PACKAGE_PROMPT_VERSION,
+    video_brief: VideoBrief | None = None,
 ) -> PackageRequest:
     if not briefs:
         raise ValueError("package request requires at least one brief")
@@ -195,6 +196,7 @@ def build_package_request(
         package_prompt=build_package_prompt(),
         response_schema=build_package_schema(),
         clips=briefs,
+        video_brief=video_brief,
     )
 
 

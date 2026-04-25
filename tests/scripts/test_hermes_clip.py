@@ -191,6 +191,66 @@ def test_advance_rejects_both_source_and_workspace(tmp_path: Path) -> None:
     assert payload["next_action"] == "error"
 
 
+def test_advance_emits_brief_handoff_when_brief_request_exists_and_unanswered(
+    tmp_path: Path,
+) -> None:
+    """v1.1: when brief-request.json exists but neither
+    brief-response.json nor brief-cache.json is present, advance must
+    pause and emit a brief handoff so the harness can author the brief
+    before scoring runs. Mirrors the scoring-handoff pattern."""
+    output_dir = tmp_path / "out"
+    source = tmp_path / "input.mp4"
+    source.write_bytes(b"fake")
+    video_resolved = source.resolve()
+    job_id = sha1(str(video_resolved).encode()).hexdigest()[:12]
+    workspace = output_dir / "jobs" / job_id
+    workspace.mkdir(parents=True)
+    # State setup: scoring-request and brief-request both exist; no
+    # response files yet. State machine should land on needs-brief.
+    (workspace / "scoring-request.json").write_text("{}", encoding="utf-8")
+    (workspace / "brief-request.json").write_text(
+        json.dumps({"job_id": job_id}), encoding="utf-8"
+    )
+
+    skill_job_dir = output_dir / "skill-jobs" / "0000-brief"
+    skill_job_dir.mkdir(parents=True)
+    job_path = skill_job_dir / "job.json"
+    job_path.write_text(
+        json.dumps(
+            {
+                "video_path": str(video_resolved),
+                "output_dir": str(output_dir.resolve()),
+                "output_profile": {
+                    "ratios": ["9:16"],
+                    "caption_preset": "hook-default",
+                    "video_brief": True,
+                },
+                "max_candidates": 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(
+        [
+            "advance",
+            "--workspace",
+            str(workspace),
+            "--config",
+            str(tmp_path / ".env"),
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["next_action"] == "brief"
+    assert payload["workspace"] == str(workspace.resolve())
+    assert payload["handoff_request_path"].endswith("brief-request.json")
+    assert payload["handoff_response_path"].endswith("brief-response.json")
+    # Instructions must orient the harness on what the brief is for.
+    assert "VideoBrief" in payload["instructions"]
+
+
 def test_advance_emits_score_handoff_when_scoring_request_exists(
     tmp_path: Path,
 ) -> None:
