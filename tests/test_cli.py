@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from clipper import __version__
 from clipper.adapters.ffmpeg_render import FFmpegRenderError
 from clipper.cli import app
+from clipper.pipeline.brief import BriefResponseError
 from clipper.pipeline.orchestrator import RenderStageError
 from clipper.pipeline.scoring import ScoringResponseError
 
@@ -203,6 +204,27 @@ def test_run_command_surfaces_scoring_response_errors(
     assert result.exit_code == 1
     assert "Scoring handoff error" in result.output
     assert "response is malformed" in result.output
+
+
+def test_run_command_surfaces_brief_response_errors(
+    cli_runner: CliRunner,
+    tmp_path,
+    sample_job_payload: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_path = tmp_path / "job.json"
+    job_path.write_text(json.dumps(sample_job_payload), encoding="utf-8")
+
+    def exploding_run(_job, *, stage: str):
+        raise BriefResponseError("brief is malformed")
+
+    monkeypatch.setattr("clipper.cli.run_job", exploding_run)
+
+    result = cli_runner.invoke(app, ["run", str(job_path), "--stage", "brief"])
+
+    assert result.exit_code == 1
+    assert "Brief handoff error" in result.output
+    assert "brief is malformed" in result.output
 
 
 def test_run_command_reports_invalid_json(cli_runner: CliRunner, tmp_path) -> None:

@@ -32,6 +32,8 @@ from clipper.pipeline.scoring import (
     ScoringResponseError,
     build_clip_brief,
     build_scoring_request,
+    clip_brief_with_recomputed_hash,
+    compute_video_brief_hash,
     load_scoring_request,
     resolve_scores,
     scores_to_model_payload,
@@ -235,8 +237,8 @@ def _rewrite_scoring_request_with_brief(
 
     Idempotent: if the existing request already embeds the same brief,
     we still rewrite (cheap; preserves canonical formatting). The clip
-    list and rubric_prompt are preserved verbatim — the only change is
-    the video_brief field.
+    The rubric_prompt is preserved verbatim. Clip hashes are re-derived with
+    the brief digest because the brief is now part of the scoring context.
     """
     request = load_scoring_request(workspace_dir)
     if request is None:
@@ -244,7 +246,16 @@ def _rewrite_scoring_request_with_brief(
             "Cannot embed brief into scoring-request.json — file is missing "
             "or invalid; run stage=mine first"
         )
-    updated = request.model_copy(update={"video_brief": brief})
+    scoring_context_hash = compute_video_brief_hash(brief)
+    clips = [
+        clip_brief_with_recomputed_hash(
+            clip,
+            scoring_context_hash=scoring_context_hash,
+            rubric_version=request.rubric_version,
+        )
+        for clip in request.clips
+    ]
+    updated = request.model_copy(update={"clips": clips, "video_brief": brief})
     return write_scoring_request(workspace_dir, updated)
 
 

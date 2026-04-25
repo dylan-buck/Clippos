@@ -42,6 +42,12 @@ from clipper.models.scoring import (
 )
 from clipper.pipeline.transcribe import build_transcript_timeline
 
+VALID_EXPECTED_PATTERNS = [
+    "the warm-welcome moment",
+    "a specific guest insight",
+    "a clear payoff after setup",
+]
+
 
 def _timeline_with_text(text_per_segment: list[tuple[str, str, float, float]]):
     """Build a TranscriptTimeline from (speaker, text, start, end) tuples."""
@@ -190,7 +196,7 @@ def _seed_request_response(
         job_id=brief_job_id or job_id,
         theme="A two-speaker conversation about welcoming guests.",
         video_format="podcast interview, two speakers",
-        expected_viral_patterns=["the warm-welcome moment"],
+        expected_viral_patterns=VALID_EXPECTED_PATTERNS,
         anti_patterns=["intro chitchat without payoff"],
     )
     response = VideoBriefResponse(
@@ -308,13 +314,50 @@ def test_video_brief_rejects_empty_theme() -> None:
         )
 
 
+def test_video_brief_enforces_pattern_counts() -> None:
+    with pytest.raises(ValidationError):
+        VideoBrief(
+            rubric_version=BRIEF_VERSION,
+            job_id="job-x",
+            theme="A theme.",
+            video_format="podcast",
+            expected_viral_patterns=["too few"],
+        )
+
+    with pytest.raises(ValidationError):
+        VideoBrief(
+            rubric_version=BRIEF_VERSION,
+            job_id="job-x",
+            theme="A theme.",
+            video_format="podcast",
+            expected_viral_patterns=[
+                "one",
+                "two",
+                "three",
+                "four",
+                "five",
+                "too many",
+            ],
+        )
+
+    with pytest.raises(ValidationError):
+        VideoBrief(
+            rubric_version=BRIEF_VERSION,
+            job_id="job-x",
+            theme="A theme.",
+            video_format="podcast",
+            expected_viral_patterns=VALID_EXPECTED_PATTERNS,
+            anti_patterns=["one", "two", "three", "too many"],
+        )
+
+
 def test_video_brief_accepts_optional_fields() -> None:
     brief = VideoBrief(
         rubric_version=BRIEF_VERSION,
         job_id="job-x",
         theme="A theme.",
         video_format="podcast",
-        expected_viral_patterns=["pattern"],
+        expected_viral_patterns=VALID_EXPECTED_PATTERNS,
         # anti_patterns has default; audience/tone/notes are optional.
     )
     assert brief.audience is None
@@ -323,13 +366,22 @@ def test_video_brief_accepts_optional_fields() -> None:
     assert brief.anti_patterns == []
 
 
+def test_brief_response_schema_enforces_pattern_counts() -> None:
+    schema = build_brief_response_schema()
+    brief_props = schema["properties"]["brief"]["properties"]
+
+    assert brief_props["expected_viral_patterns"]["minItems"] == 3
+    assert brief_props["expected_viral_patterns"]["maxItems"] == 5
+    assert brief_props["anti_patterns"]["maxItems"] == 3
+
+
 def test_persist_cached_brief_writes_canonical_path(tmp_path: Path) -> None:
     brief = VideoBrief(
         rubric_version=BRIEF_VERSION,
         job_id="job-cache",
         theme="A cached brief.",
         video_format="podcast",
-        expected_viral_patterns=["the moment"],
+        expected_viral_patterns=VALID_EXPECTED_PATTERNS,
     )
     path = persist_cached_brief(tmp_path, brief)
     assert path.name == BRIEF_CACHE_FILENAME

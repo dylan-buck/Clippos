@@ -51,6 +51,8 @@ PENALTY_CATEGORIES: tuple[PenaltyCategory, ...] = (
     "low_delivery",
 )
 
+VideoBriefPattern = Annotated[str, Field(min_length=1)]
+
 
 class MiningSignals(ContractModel):
     hook: Annotated[float, Field(ge=0, le=1)]
@@ -103,8 +105,12 @@ class VideoBrief(ContractModel):
     job_id: str
     theme: Annotated[str, Field(min_length=1)]
     video_format: Annotated[str, Field(min_length=1)]
-    expected_viral_patterns: list[str]
-    anti_patterns: list[str] = Field(default_factory=list)
+    expected_viral_patterns: Annotated[
+        list[VideoBriefPattern], Field(min_length=3, max_length=5)
+    ]
+    anti_patterns: Annotated[
+        list[VideoBriefPattern], Field(max_length=3)
+    ] = Field(default_factory=list)
     audience: str | None = None
     tone: str | None = None
     notes: str | None = None

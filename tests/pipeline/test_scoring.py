@@ -14,6 +14,7 @@ from clipper.models.scoring import (
     RubricScores,
     ScoringRequest,
     ScoringResponse,
+    VideoBrief,
 )
 from clipper.pipeline.candidates import ScoredWindow, WindowSignals
 from clipper.pipeline.scoring import (
@@ -22,7 +23,9 @@ from clipper.pipeline.scoring import (
     ScoringResponseError,
     build_clip_brief,
     build_scoring_request,
+    clip_brief_with_recomputed_hash,
     compute_clip_hash,
+    compute_video_brief_hash,
     load_cached_score,
     load_scoring_request,
     load_scoring_response,
@@ -117,6 +120,22 @@ def _clip_score(**overrides) -> ClipScore:
     return ClipScore(**defaults)
 
 
+def _video_brief(**overrides) -> VideoBrief:
+    defaults = {
+        "rubric_version": RUBRIC_VERSION,
+        "job_id": "job-1",
+        "theme": "A focused interview about a useful insight.",
+        "video_format": "podcast interview",
+        "expected_viral_patterns": [
+            "clear thesis moments",
+            "specific examples",
+            "guest disagreement with payoff",
+        ],
+    }
+    defaults.update(overrides)
+    return VideoBrief(**defaults)
+
+
 def test_compute_clip_hash_is_stable_for_identical_input() -> None:
     a = compute_clip_hash(
         transcript="hello world",
@@ -180,6 +199,24 @@ def test_compute_clip_hash_differs_when_time_bounds_shift() -> None:
         rubric_version="1.0.0",
     )
     assert base != shifted
+
+
+def test_compute_clip_hash_differs_when_scoring_context_changes() -> None:
+    base = compute_clip_hash(
+        transcript="hello",
+        start_seconds=0.0,
+        end_seconds=1.0,
+        rubric_version="1.0.0",
+        scoring_context_hash="brief-a",
+    )
+    changed = compute_clip_hash(
+        transcript="hello",
+        start_seconds=0.0,
+        end_seconds=1.0,
+        rubric_version="1.0.0",
+        scoring_context_hash="brief-b",
+    )
+    assert base != changed
 
 
 def test_build_clip_brief_includes_transcript_speakers_and_signals() -> None:
@@ -373,6 +410,39 @@ def test_resolve_scores_uses_cache_when_response_absent(tmp_path: Path) -> None:
     assert len(resolved) == 1
     assert resolved[0].clip_id == "clip-000"  # rehomed to current rank
     assert resolved[0].title == "From cache"
+
+
+def test_resolve_scores_does_not_reuse_cache_across_video_brief_context(
+    tmp_path: Path,
+) -> None:
+    segments = (_segment(text="cached"),)
+    base_brief = build_clip_brief(
+        candidate=_candidate(end_seconds=8.0),
+        scored=_scored_window(segments),
+    )
+    video_brief = _video_brief()
+    context_hash = compute_video_brief_hash(video_brief)
+    contextual_brief = clip_brief_with_recomputed_hash(
+        base_brief,
+        scoring_context_hash=context_hash,
+        rubric_version=RUBRIC_VERSION,
+    )
+    request = build_scoring_request(
+        job_id="job-1",
+        video_path=tmp_path / "v.mp4",
+        briefs=[contextual_brief],
+        video_brief=video_brief,
+    )
+    write_scoring_request(tmp_path, request)
+
+    stale_cached = _clip_score(
+        clip_id="clip-000",
+        clip_hash=base_brief.clip_hash,
+        title="From stale cache",
+    )
+    persist_cached_score(tmp_path, stale_cached)
+
+    assert resolve_scores(tmp_path) is None
 
 
 def test_resolve_scores_raises_on_rubric_version_mismatch(tmp_path: Path) -> None:

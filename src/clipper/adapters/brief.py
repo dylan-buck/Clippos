@@ -100,10 +100,13 @@ def build_brief_response_schema() -> dict:
                     "video_format": {"type": "string", "minLength": 1},
                     "expected_viral_patterns": {
                         "type": "array",
+                        "minItems": 3,
+                        "maxItems": 5,
                         "items": {"type": "string", "minLength": 1},
                     },
                     "anti_patterns": {
                         "type": "array",
+                        "maxItems": 3,
                         "items": {"type": "string", "minLength": 1},
                     },
                     "audience": {"type": ["string", "null"]},

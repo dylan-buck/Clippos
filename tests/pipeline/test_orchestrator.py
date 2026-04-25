@@ -458,13 +458,18 @@ def test_auto_stage_embeds_brief_into_scoring_request_when_response_exists(
     scoring_request = load_scoring_request(workspace)
     assert scoring_request is not None
     assert scoring_request.video_brief is None  # no brief embedded yet
+    original_clip_hashes = [clip.clip_hash for clip in scoring_request.clips]
 
     fake_brief = VideoBrief(
         rubric_version=BRIEF_VERSION,
         job_id=scoring_request.job_id,
         theme="A staged brief that the test embeds.",
         video_format="podcast interview",
-        expected_viral_patterns=["mocked pattern"],
+        expected_viral_patterns=[
+            "mocked pattern",
+            "specific guest payoff",
+            "clear thesis moment",
+        ],
     )
     response = VideoBriefResponse(
         rubric_version=BRIEF_VERSION,
@@ -497,6 +502,7 @@ def test_auto_stage_embeds_brief_into_scoring_request_when_response_exists(
     rewritten = load_scoring_request(workspace)
     assert rewritten is not None
     assert rewritten.video_brief == fake_brief
+    assert [clip.clip_hash for clip in rewritten.clips] != original_clip_hashes
 
 
 def test_brief_stage_raises_when_no_response_or_cache_available(

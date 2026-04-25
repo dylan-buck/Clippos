@@ -39,9 +39,47 @@ def compute_clip_hash(
     start_seconds: float,
     end_seconds: float,
     rubric_version: str,
+    scoring_context_hash: str | None = None,
 ) -> str:
-    key = f"{rubric_version}|{start_seconds:.3f}|{end_seconds:.3f}|{transcript.strip()}"
+    context = f"|context:{scoring_context_hash}" if scoring_context_hash else ""
+    key = (
+        f"{rubric_version}|{start_seconds:.3f}|{end_seconds:.3f}|"
+        f"{transcript.strip()}{context}"
+    )
     return sha1(key.encode("utf-8")).hexdigest()[:16]
+
+
+def compute_video_brief_hash(video_brief: VideoBrief) -> str:
+    """Stable digest for the scoring context carried by a VideoBrief.
+
+    Keep None-valued optional fields explicit so changing an omitted optional
+    field into a real value changes the cache key predictably.
+    """
+    payload = json.dumps(
+        video_brief.model_dump(mode="json", exclude_none=False),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return sha1(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def clip_brief_with_recomputed_hash(
+    brief: ClipBrief,
+    *,
+    scoring_context_hash: str,
+    rubric_version: str,
+) -> ClipBrief:
+    return brief.model_copy(
+        update={
+            "clip_hash": compute_clip_hash(
+                transcript=brief.transcript,
+                start_seconds=brief.start_seconds,
+                end_seconds=brief.end_seconds,
+                rubric_version=rubric_version,
+                scoring_context_hash=scoring_context_hash,
+            )
+        }
+    )
 
 
 def build_clip_brief(

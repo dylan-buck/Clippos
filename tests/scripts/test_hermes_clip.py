@@ -191,6 +191,82 @@ def test_advance_rejects_both_source_and_workspace(tmp_path: Path) -> None:
     assert payload["next_action"] == "error"
 
 
+def test_start_new_job_persists_per_run_approval_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hermes = _load_hermes_module()
+    output_dir = tmp_path / "out"
+    source = tmp_path / "input.mp4"
+    source.write_bytes(b"fake")
+    skill_job_dir = output_dir / "skill-jobs" / "0000-start"
+    skill_job_dir.mkdir(parents=True)
+    job_path = skill_job_dir / "job.json"
+    job_path.write_text(
+        json.dumps(
+            {
+                "video_path": str(source.resolve()),
+                "output_dir": str(output_dir.resolve()),
+                "output_profile": {"ratios": ["9:16"]},
+                "max_candidates": 8,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_run_clip_skill_json(flags, *, stage: str):
+        assert stage == "prepare"
+        assert "--max-candidates" in flags
+        return {
+            "job_path": str(job_path),
+            "approve_top": 5,
+            "min_score": 0.7,
+        }
+
+    monkeypatch.setattr(hermes, "_run_clip_skill_json", fake_run_clip_skill_json)
+    args = argparse.Namespace(
+        source=str(source),
+        config=tmp_path / ".env",
+        ratios=None,
+        max_candidates=8,
+        approve_top=2,
+        min_score=0.83,
+    )
+
+    workspace, returned_job_path = hermes._start_new_job(args)
+
+    assert returned_job_path == job_path
+    sidecar = json.loads((workspace / "hermes-job.json").read_text(encoding="utf-8"))
+    assert sidecar["job_path"] == str(job_path)
+    assert sidecar["approve_top"] == 2
+    assert sidecar["min_score"] == 0.83
+
+
+def test_approve_flags_reuse_resume_approval_options(tmp_path: Path) -> None:
+    hermes = _load_hermes_module()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    job_path = tmp_path / "job.json"
+    job_path.write_text("{}", encoding="utf-8")
+    hermes._write_resume_sidecar(
+        workspace,
+        job_path,
+        approve_top=3,
+        min_score=0.0,
+    )
+    args = argparse.Namespace(
+        approve_top=None,
+        min_score=None,
+        config=tmp_path / ".env",
+    )
+
+    assert hermes._approve_flags(args, workspace) == [
+        "--top",
+        "3",
+        "--min-score",
+        "0.0",
+    ]
+
+
 def test_advance_emits_brief_handoff_when_brief_request_exists_and_unanswered(
     tmp_path: Path,
 ) -> None:

@@ -620,7 +620,22 @@ def _start_new_job(args: argparse.Namespace) -> tuple[Path, Path]:
     job_path = Path(payload["job_path"])
     workspace = _workspace_from_job(job_path)
     workspace.mkdir(parents=True, exist_ok=True)
-    _write_resume_sidecar(workspace, job_path)
+    approve_top = (
+        args.approve_top
+        if args.approve_top is not None
+        else _coerce_positive_int(payload.get("approve_top"))
+    )
+    min_score = (
+        args.min_score
+        if args.min_score is not None
+        else _coerce_score(payload.get("min_score"))
+    )
+    _write_resume_sidecar(
+        workspace,
+        job_path,
+        approve_top=approve_top,
+        min_score=min_score,
+    )
     return workspace, job_path
 
 
@@ -632,21 +647,35 @@ def _workspace_from_job(job_path: Path) -> Path:
     return output_dir / "jobs" / job_id
 
 
-def _write_resume_sidecar(workspace: Path, job_path: Path) -> None:
+def _read_resume_sidecar(workspace: Path) -> dict[str, Any]:
     sidecar = workspace / HERMES_RESUME_FILENAME
-    sidecar.write_text(
-        json.dumps({"job_path": str(job_path)}, indent=2),
-        encoding="utf-8",
-    )
+    if not sidecar.exists():
+        return {}
+    payload = _safe_read_json(sidecar) or {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_resume_sidecar(
+    workspace: Path,
+    job_path: Path,
+    *,
+    approve_top: int | None = None,
+    min_score: float | None = None,
+) -> None:
+    sidecar = workspace / HERMES_RESUME_FILENAME
+    payload: dict[str, Any] = {"job_path": str(job_path)}
+    if approve_top is not None:
+        payload["approve_top"] = approve_top
+    if min_score is not None:
+        payload["min_score"] = min_score
+    sidecar.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _workspace_job_path(workspace: Path) -> Path:
-    sidecar = workspace / HERMES_RESUME_FILENAME
-    if sidecar.exists():
-        payload = _safe_read_json(sidecar) or {}
-        job_path = payload.get("job_path")
-        if job_path and Path(job_path).exists():
-            return Path(job_path)
+    payload = _read_resume_sidecar(workspace)
+    job_path = payload.get("job_path")
+    if job_path and Path(job_path).exists():
+        return Path(job_path)
     fallback = _find_matching_skill_job(workspace)
     if fallback is not None:
         _write_resume_sidecar(workspace, fallback)
@@ -828,9 +857,36 @@ def _review_manifest_path(workspace: Path) -> Path:
 def _approve_flags(args: argparse.Namespace, workspace: Path) -> list[str]:
     config = clip_skill.merged_config(args.config)
     defaults = clip_skill.resolved_defaults(config)
-    top = args.approve_top if args.approve_top is not None else defaults["approve_top"]
-    min_score = args.min_score if args.min_score is not None else defaults["min_score"]
+    resume = _read_resume_sidecar(workspace)
+    resume_top = _coerce_positive_int(resume.get("approve_top"))
+    resume_min_score = _coerce_score(resume.get("min_score"))
+    top = (
+        args.approve_top
+        if args.approve_top is not None
+        else resume_top if resume_top is not None else defaults["approve_top"]
+    )
+    min_score = (
+        args.min_score
+        if args.min_score is not None
+        else resume_min_score if resume_min_score is not None else defaults["min_score"]
+    )
     return ["--top", str(top), "--min-score", str(min_score)]
+
+
+def _coerce_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _coerce_score(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if 0 <= parsed <= 1 else None
 
 
 def _safe_read_json(path: Path) -> dict[str, Any] | None:
