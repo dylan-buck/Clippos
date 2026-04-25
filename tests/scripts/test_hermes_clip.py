@@ -218,6 +218,8 @@ def test_start_new_job_persists_per_run_approval_options(
         assert "--max-candidates" in flags
         return {
             "job_path": str(job_path),
+            "ratios": ["9:16"],
+            "max_candidates": 8,
             "approve_top": 5,
             "min_score": 0.7,
         }
@@ -237,6 +239,8 @@ def test_start_new_job_persists_per_run_approval_options(
     assert returned_job_path == job_path
     sidecar = json.loads((workspace / "hermes-job.json").read_text(encoding="utf-8"))
     assert sidecar["job_path"] == str(job_path)
+    assert sidecar["ratios"] == ["9:16"]
+    assert sidecar["max_candidates"] == 8
     assert sidecar["approve_top"] == 2
     assert sidecar["min_score"] == 0.83
 

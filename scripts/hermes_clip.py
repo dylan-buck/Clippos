@@ -630,9 +630,13 @@ def _start_new_job(args: argparse.Namespace) -> tuple[Path, Path]:
         if args.min_score is not None
         else _coerce_score(payload.get("min_score"))
     )
+    ratios = _coerce_ratios(payload.get("ratios"))
+    max_candidates = _coerce_positive_int(payload.get("max_candidates"))
     _write_resume_sidecar(
         workspace,
         job_path,
+        ratios=ratios,
+        max_candidates=max_candidates,
         approve_top=approve_top,
         min_score=min_score,
     )
@@ -659,11 +663,17 @@ def _write_resume_sidecar(
     workspace: Path,
     job_path: Path,
     *,
+    ratios: list[str] | None = None,
+    max_candidates: int | None = None,
     approve_top: int | None = None,
     min_score: float | None = None,
 ) -> None:
     sidecar = workspace / HERMES_RESUME_FILENAME
     payload: dict[str, Any] = {"job_path": str(job_path)}
+    if ratios is not None:
+        payload["ratios"] = ratios
+    if max_candidates is not None:
+        payload["max_candidates"] = max_candidates
     if approve_top is not None:
         payload["approve_top"] = approve_top
     if min_score is not None:
@@ -887,6 +897,13 @@ def _coerce_score(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if 0 <= parsed <= 1 else None
+
+
+def _coerce_ratios(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    ratios = [item for item in value if isinstance(item, str)]
+    return ratios or None
 
 
 def _safe_read_json(path: Path) -> dict[str, Any] | None:

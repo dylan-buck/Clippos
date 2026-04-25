@@ -100,22 +100,21 @@ def test_pyproject_pins_python_and_engine_dep_set() -> None:
     """
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
-    # Python pin must close the upper bound — TF wheels cap at 3.12, and
-    # the open-ended ">=3.12" silently lets users on 3.13/3.14 past
-    # install validation only to crash deep in pip's resolver.
+    # Python pin must close the upper bound while install.sh is intentionally
+    # bootstrapping Python 3.12.
     assert 'requires-python = ">=3.12,<3.13"' in pyproject
 
-    # Critical pins. Each of these has a dogfood-proven failure mode if
-    # loosened — see docs/pre-ship-fixes.md for the failure cascades.
+    # Critical pins. Keep the torch / WhisperX / pyannote stack in sync;
+    # partial upgrades tend to create resolver conflicts or import failures.
     required_pins = (
-        '"torch==2.3.1"',           # >=2.4 removes torchaudio.AudioMetaData → pyannote crash
-        '"torchaudio==2.3.1"',
-        '"torchvision==0.18.1"',
-        '"whisperx==3.3.6"',         # 3.4.x has undeclared matplotlib + tighter torch pin
-        '"transformers>=4.40,<5"',   # 5.x silently disables PyTorch on torch <2.4
-        '"pyannote.audio>=3.3,<4"',  # 4.x needs torch>=2.8, breaks the cascade
+        '"torch==2.8.0"',
+        '"torchaudio==2.8.0"',
+        '"torchvision==0.23.0"',
+        '"whisperx==3.8.5"',
+        '"transformers>=4.48,<5"',
+        '"pyannote.audio>=4.0,<5"',
         '"speechbrain>=1.0,<2"',
-        '"matplotlib>=3.7"',         # whisperx imports without declaring
+        '"matplotlib>=3.7"',
     )
     for pin in required_pins:
         assert pin in pyproject, (

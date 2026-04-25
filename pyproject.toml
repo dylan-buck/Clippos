@@ -13,28 +13,21 @@ requires-python = ">=3.12,<3.13"
 dependencies = ["typer>=0.12", "pydantic>=2.7"]
 
 [project.optional-dependencies]
-# Pinned to a coexisting set, dogfood-verified 2026-04-25 (see
-# docs/pre-ship-fixes.md). The unpinned floor versions left the resolver
-# free to pull torch 2.11 + pyannote 3.3 + transformers 5, which mutually
-# exclude each other and crash whisperx's import. Loosen these only after
-# re-running the cold-install verification gate in pre-ship-fixes.md.
+# Pinned to a coexisting set, dogfood-verified 2026-04-25. The previous
+# torch 2.3 / whisperx 3.3.6 set ran in an already-warmed pip env, but fresh
+# uv/pip resolution is impossible because whisperx declares torch>=2.5.1.
+# Keep these as a batch; changing one usually forces the whole ASR stack.
 engine = [
-    # Torch / vision stack — pyannote.audio 3.x references
-    # torchaudio.AudioMetaData (removed in torchaudio 2.4), so torch
-    # must stay <2.4. pyannote.audio 4.x needs torch>=2.8, which would
-    # cascade through everything else; defer that upgrade to a future
-    # batch.
-    "torch==2.3.1",
-    "torchaudio==2.3.1",
-    "torchvision==0.18.1",
+    # Torch / vision stack. WhisperX 3.8.x and pyannote.audio 4.x agree on
+    # torch/torchaudio 2.8, which resolves cleanly under uv and pip.
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "torchvision==0.23.0",
 
-    # ASR stack. whisperx 3.4.x has an undeclared matplotlib dep and
-    # tightens torch>=2.5.1 (which we can't satisfy); 3.3.6 runs fine
-    # on torch 2.3.1 despite its overly-strict metadata pin.
-    "whisperx==3.3.6",
-    # transformers 5.x removed compat that whisperx 3.x relies on and
-    # silently disables PyTorch when paired with torch <2.4. Hold <5.
-    "transformers>=4.40,<5",
+    # ASR stack. Hold transformers <5 until the WhisperX compatibility
+    # surface is verified against a real-video run.
+    "whisperx==3.8.5",
+    "transformers>=4.48,<5",
 
     # Open-source diarization stack (zero-config, default). speechbrain
     # 1.x moved EncoderClassifier to .inference.speaker; the adapter
@@ -49,8 +42,8 @@ engine = [
     "static-ffmpeg>=3.0",
 
     # pyannote stays as the opt-in upgrade for users who already have an
-    # HF token + license acceptance for pyannote/speaker-diarization-3.1.
-    "pyannote.audio>=3.3,<4",
+    # HF token + license acceptance for pyannote/speaker-diarization.
+    "pyannote.audio>=4.0,<5",
 
     # Vision stack.
     "opencv-python>=4.9",
@@ -62,7 +55,7 @@ engine = [
     # whisperx 3.x imports matplotlib without declaring it.
     "matplotlib>=3.7",
 
-    "numpy>=1.26",
+    "numpy>=2.1",
 ]
 dev = ["pytest>=8.2", "pytest-cov>=5.0", "ruff>=0.4"]
 
