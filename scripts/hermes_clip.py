@@ -666,6 +666,17 @@ def _run_cli_stage(job_path: Path, stage: str, *, workspace: Path) -> None:
     error messages stay informative when a stage exits non-zero.
     Stdout is discarded — the CLI prints the artifact path there but we
     already know it from the workspace layout.
+
+    macOS prints a wall of `objc[xxxxx]: Class X is implemented in both
+    libfoo.dylib and libbar.dylib — One of the two will be used. Which one
+    is undefined.` warnings on every run because cv2, av (pyannote dep),
+    static-ffmpeg, and the system Homebrew ffmpeg each bundle their own
+    copy of libav*. They are cosmetic — no functional bug — but they
+    pollute user-visible stderr and bury real errors. Filter them out of
+    the live passthrough; preserve them in the ring buffer so they are
+    available if a stage exits non-zero (rare; the warnings rarely
+    correlate with actual failures, but keeping them in the error tail
+    avoids hiding diagnostic signal).
     """
     from collections import deque
 
@@ -680,9 +691,10 @@ def _run_cli_stage(job_path: Path, stage: str, *, workspace: Path) -> None:
     tail: deque[str] = deque(maxlen=60)
     assert proc.stderr is not None
     for line in proc.stderr:
-        sys.stderr.write(line)
-        sys.stderr.flush()
         tail.append(line)
+        if not _is_objc_dylib_warning(line):
+            sys.stderr.write(line)
+            sys.stderr.flush()
     proc.wait()
     if proc.returncode != 0:
         message = (
@@ -691,6 +703,43 @@ def _run_cli_stage(job_path: Path, stage: str, *, workspace: Path) -> None:
         )
         raise HermesClipError(message, stage=stage, workspace=workspace)
     _status(f"Finished stage `{stage}`.", workspace=workspace)
+
+
+# Pattern matches the macOS Objective-C runtime's "Class … is implemented
+# in both …" duplicate-class warnings emitted by every cv2 / av / ffmpeg
+# import on a system with multiple libav copies. These are cosmetic; we
+# strip them from the live stderr passthrough so they don't bury real
+# diagnostic signal.
+_OBJC_DUPLICATE_CLASS_WARNING = ("objc[", "is implemented in both")
+
+
+def _is_objc_dylib_warning(line: str) -> bool:
+    """Return True for the multi-line objc dylib duplicate-class warning.
+
+    The warning shape is:
+
+        objc[12345]: Class FooBar is implemented in both /a/lib1.dylib (...)
+        and /b/lib2.dylib (...). One of the two will be used. Which one is undefined.
+
+    Matches both the leading `objc[NNNN]: Class ... implemented in both`
+    line and the continuation lines that name the dylibs and the
+    "One of the two will be used" disclaimer.
+    """
+    stripped = line.lstrip()
+    if stripped.startswith(_OBJC_DUPLICATE_CLASS_WARNING[0]) and (
+        _OBJC_DUPLICATE_CLASS_WARNING[1] in stripped
+    ):
+        return True
+    if "One of the two will be used. Which one is undefined." in stripped:
+        return True
+    # The continuation lines (paths to the dylibs) start with whitespace
+    # followed by `/`. Match conservatively so we don't drop unrelated
+    # tracebacks that also indent.
+    if stripped.startswith("/") and (
+        ".dylib" in stripped or ".framework/" in stripped
+    ) and ("(0x" in stripped or "loaded from" in stripped):
+        return True
+    return False
 
 
 # ---------- misc helpers ----------

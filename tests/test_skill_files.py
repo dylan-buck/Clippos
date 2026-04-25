@@ -88,3 +88,37 @@ def test_skill_documents_feedback_loop_and_creator_patterns() -> None:
     # harness knows to read it from the advance payload.
     assert "creator_patterns" in skill
     assert skill.count("creator_patterns") >= 2
+
+
+def test_pyproject_pins_python_and_engine_dep_set() -> None:
+    """The engine extras have a known-coexisting version set verified by
+    the 2026-04-25 dogfood. Unpinning any of these (especially torch /
+    pyannote.audio / transformers / whisperx) breaks the install path
+    via the dep-resolution cascade documented in pre-ship-fixes.md.
+    Catch a future "let me bump this for flexibility" diff at CI rather
+    than at the user's first install.
+    """
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    # Python pin must close the upper bound — TF wheels cap at 3.12, and
+    # the open-ended ">=3.12" silently lets users on 3.13/3.14 past
+    # install validation only to crash deep in pip's resolver.
+    assert 'requires-python = ">=3.12,<3.13"' in pyproject
+
+    # Critical pins. Each of these has a dogfood-proven failure mode if
+    # loosened — see docs/pre-ship-fixes.md for the failure cascades.
+    required_pins = (
+        '"torch==2.3.1"',           # >=2.4 removes torchaudio.AudioMetaData → pyannote crash
+        '"torchaudio==2.3.1"',
+        '"torchvision==0.18.1"',
+        '"whisperx==3.3.6"',         # 3.4.x has undeclared matplotlib + tighter torch pin
+        '"transformers>=4.40,<5"',   # 5.x silently disables PyTorch on torch <2.4
+        '"pyannote.audio>=3.3,<4"',  # 4.x needs torch>=2.8, breaks the cascade
+        '"speechbrain>=1.0,<2"',
+        '"matplotlib>=3.7"',         # whisperx imports without declaring
+    )
+    for pin in required_pins:
+        assert pin in pyproject, (
+            f"engine extras must pin {pin!r}; dropping this pin reopens the "
+            "dep cascade documented in docs/pre-ship-fixes.md (F3)."
+        )

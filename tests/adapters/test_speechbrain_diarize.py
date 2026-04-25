@@ -365,3 +365,104 @@ def test_diarize_audio_returns_empty_when_all_segments_too_short(
 
     assert list(df.columns) == ["start", "end", "speaker"]
     assert len(df) == 0
+
+
+# ---------- speechbrain 0.5.x dual-import fallback ----------
+
+
+@needs_torch
+def test_extract_embeddings_falls_back_to_speechbrain_pretrained_on_05x(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """speechbrain 1.x moved EncoderClassifier from
+    ``speechbrain.pretrained`` to ``speechbrain.inference.speaker``. Some
+    install environments (and the dogfood-pinned set) end up with
+    speechbrain 0.5.x where ``speechbrain.inference.speaker`` does not
+    exist. The adapter has a try/except fallback to the legacy path; this
+    test guards against a future refactor that drops the fallback.
+
+    Strategy: poison the 1.x import path so it raises ImportError, install
+    a fake ``speechbrain.pretrained.EncoderClassifier``, and call
+    ``_extract_embeddings`` directly. Success here means the legacy path
+    is wired up.
+    """
+
+    class FakeEmbeddingTensor:
+        def __init__(self, vector: np.ndarray) -> None:
+            self._vector = vector
+
+        def detach(self) -> "FakeEmbeddingTensor":
+            return self
+
+        def squeeze(self) -> "FakeEmbeddingTensor":
+            return self
+
+        def cpu(self) -> "FakeEmbeddingTensor":
+            return self
+
+        def numpy(self) -> np.ndarray:
+            return self._vector
+
+    classifier_calls: list[Any] = []
+
+    class FakeClassifier:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def encode_batch(self, signal: Any) -> FakeEmbeddingTensor:
+            vector = np.array(
+                [3.0 if self.calls % 2 == 0 else 0.0,
+                 0.0 if self.calls % 2 == 0 else 3.0,
+                 0.0],
+                dtype="float32",
+            )
+            classifier_calls.append(tuple(signal.shape))
+            self.calls += 1
+            return FakeEmbeddingTensor(vector)
+
+    legacy_classifier_factory_calls: list[tuple[str, str | None]] = []
+
+    class FakeEncoderClassifier:
+        @staticmethod
+        def from_hparams(source: str, savedir: str | None = None) -> FakeClassifier:
+            legacy_classifier_factory_calls.append((source, savedir))
+            return FakeClassifier()
+
+    pretrained_module = types.ModuleType("speechbrain.pretrained")
+    pretrained_module.EncoderClassifier = FakeEncoderClassifier  # type: ignore[attr-defined]
+
+    speechbrain_module = types.ModuleType("speechbrain")
+    speechbrain_module.pretrained = pretrained_module  # type: ignore[attr-defined]
+
+    # Install the 0.5.x-shaped speechbrain package.
+    monkeypatch.setitem(sys.modules, "speechbrain", speechbrain_module)
+    monkeypatch.setitem(sys.modules, "speechbrain.pretrained", pretrained_module)
+
+    # Critically: poison the 1.x paths so the first `from speechbrain.inference.speaker
+    # import EncoderClassifier` line raises ImportError. Setting a sys.modules entry
+    # to None is the standard idiom for "import this should fail".
+    monkeypatch.setitem(sys.modules, "speechbrain.inference", None)
+    monkeypatch.setitem(sys.modules, "speechbrain.inference.speaker", None)
+
+    # Two non-trivially short spans so the adapter actually invokes the
+    # embedder (sub-threshold spans are skipped before embedding).
+    spans: list[dict[str, float]] = [
+        {"start": 0.0, "end": 1.5},
+        {"start": 1.7, "end": 3.2},
+    ]
+    sample_rate = sd.DEFAULT_SAMPLE_RATE
+    audio = np.full(sample_rate * 4, 0.1, dtype="float32")
+    cfg = sd.DiarizationConfig()
+
+    embeddings, kept_spans = sd._extract_embeddings(audio, spans, cfg)
+
+    # Two spans → two embeddings via the legacy path.
+    assert embeddings.shape == (2, 3)
+    assert len(kept_spans) == 2
+    # The legacy factory was called — proving the fallback branch ran.
+    assert len(legacy_classifier_factory_calls) == 1, (
+        "Legacy speechbrain.pretrained.EncoderClassifier was not invoked; "
+        "the dual-import fallback path is broken."
+    )
+    # Each embedding came from the embedder (i.e. the embedder loop ran).
+    assert len(classifier_calls) == 2

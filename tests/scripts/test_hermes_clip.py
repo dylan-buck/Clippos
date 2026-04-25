@@ -63,6 +63,46 @@ def test_preflight_reports_missing_requirements(tmp_path: Path) -> None:
     assert "missing_required" in payload["engine_imports"]
 
 
+def test_is_objc_dylib_warning_matches_full_warning_block() -> None:
+    """The macOS objc-runtime duplicate-class warning is a multi-line
+    block emitted by cv2 + av + ffmpeg colliding. Strip all three lines
+    of the block from live stderr so they don't bury real diagnostic
+    signal — but recognize them precisely so we don't drop unrelated
+    tracebacks that happen to indent or contain a dylib path."""
+    hermes_clip = _load_hermes_module()
+
+    # The header line
+    assert hermes_clip._is_objc_dylib_warning(
+        "objc[12345]: Class AVFFrameReceiver is implemented in both "
+        "/opt/homebrew/Cellar/ffmpeg/lib/libavdevice.59.dylib (0x123) "
+        "and /Users/x/.venv/lib/python3.12/site-packages/cv2/.dylibs/"
+        "libavdevice.61.dylib (0x456). "
+    )
+    # The continuation line with the second dylib path
+    assert hermes_clip._is_objc_dylib_warning(
+        "  /Users/x/.venv/lib/python3.12/site-packages/cv2/.dylibs/"
+        "libavdevice.61.3.100.dylib (0x123abc) loaded from cv2"
+    )
+    # The trailing "Which one is undefined" line
+    assert hermes_clip._is_objc_dylib_warning(
+        "One of the two will be used. Which one is undefined."
+    )
+
+    # Real diagnostic content must NOT be filtered
+    assert not hermes_clip._is_objc_dylib_warning(
+        "Traceback (most recent call last):"
+    )
+    assert not hermes_clip._is_objc_dylib_warning(
+        "  File \"/Users/x/.venv/lib/python3.12/site-packages/torch/__init__.py\", line 42, in <module>"
+    )
+    assert not hermes_clip._is_objc_dylib_warning(
+        "RuntimeError: CUDA out of memory"
+    )
+    assert not hermes_clip._is_objc_dylib_warning(
+        "[clip] Mining candidates: probing media, transcribing..."
+    )
+
+
 def test_preflight_propagates_engine_misses_into_top_level_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

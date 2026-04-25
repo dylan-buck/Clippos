@@ -15,18 +15,42 @@ warn() {
   printf '[clip install] warning: %s\n' "$*" >&2
 }
 
+python_in_supported_range() {
+  # The pyproject pin is >=3.12,<3.13 because TensorFlow wheels (pulled
+  # transitively via retina-face) cap at 3.12 — anything newer fails
+  # mid-resolve with a confusing TF error far from the real cause.
+  "$1" -c 'import sys; sys.exit(0 if (3,12) <= sys.version_info < (3,13) else 1)' \
+    >/dev/null 2>&1
+}
+
 find_python() {
   if [ -n "${CLIPPER_BOOTSTRAP_PYTHON:-}" ]; then
-    printf '%s\n' "$CLIPPER_BOOTSTRAP_PYTHON"
-    return
+    if python_in_supported_range "$CLIPPER_BOOTSTRAP_PYTHON"; then
+      printf '%s\n' "$CLIPPER_BOOTSTRAP_PYTHON"
+      return
+    fi
+    printf 'CLIPPER_BOOTSTRAP_PYTHON=%s does not satisfy 3.12.x\n' \
+      "$CLIPPER_BOOTSTRAP_PYTHON" >&2
+    exit 1
   fi
   for candidate in python3.12 python3 python; do
-    if command -v "$candidate" >/dev/null 2>&1; then
+    if command -v "$candidate" >/dev/null 2>&1 \
+      && python_in_supported_range "$candidate"; then
       printf '%s\n' "$candidate"
       return
     fi
   done
-  printf 'python3\n'
+  printf 'No Python 3.12.x found on PATH.\n' >&2
+  printf 'TensorFlow wheels (pulled via retina-face) cap at 3.12, and our\n' >&2
+  printf 'pyproject pins requires-python = ">=3.12,<3.13", so 3.13/3.14 also\n' >&2
+  printf 'fail to install.\n' >&2
+  printf '\n' >&2
+  printf '  macOS:        brew install python@3.12\n' >&2
+  printf '  Debian/Ubuntu: sudo apt install python3.12 python3.12-venv\n' >&2
+  printf '  Arch:          sudo pacman -S python (currently 3.12.x)\n' >&2
+  printf '\n' >&2
+  printf 'Or set CLIPPER_BOOTSTRAP_PYTHON=/path/to/python3.12 and re-run.\n' >&2
+  exit 1
 }
 
 checkout_repo() {
@@ -117,10 +141,8 @@ main() {
 
   local python_bin
   python_bin="$(find_python)"
-  if ! command -v "$python_bin" >/dev/null 2>&1; then
-    printf 'Python 3.12+ is required to install clipping-tool\n' >&2
-    exit 1
-  fi
+  # find_python exits non-zero with a clear message if nothing qualifies;
+  # the redundant command -v check the original script had is gone.
 
   checkout_repo
   install_python_env "$python_bin"

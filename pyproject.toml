@@ -5,29 +5,63 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "clipper-tool"
 dynamic = ["version"]
-requires-python = ">=3.12"
+# TensorFlow wheels (pulled transitively via retina-face) cap at 3.12,
+# so the only resolvable interpreter is 3.12.x. Users on 3.13+ would
+# otherwise get past install validation and crash deep inside pip's
+# resolver on opaque TF wheel errors.
+requires-python = ">=3.12,<3.13"
 dependencies = ["typer>=0.12", "pydantic>=2.7"]
 
 [project.optional-dependencies]
+# Pinned to a coexisting set, dogfood-verified 2026-04-25 (see
+# docs/pre-ship-fixes.md). The unpinned floor versions left the resolver
+# free to pull torch 2.11 + pyannote 3.3 + transformers 5, which mutually
+# exclude each other and crash whisperx's import. Loosen these only after
+# re-running the cold-install verification gate in pre-ship-fixes.md.
 engine = [
-    "whisperx>=3.1",
-    # Open-source diarization stack (zero-config, default).
-    "speechbrain>=1.0",
+    # Torch / vision stack — pyannote.audio 3.x references
+    # torchaudio.AudioMetaData (removed in torchaudio 2.4), so torch
+    # must stay <2.4. pyannote.audio 4.x needs torch>=2.8, which would
+    # cascade through everything else; defer that upgrade to a future
+    # batch.
+    "torch==2.3.1",
+    "torchaudio==2.3.1",
+    "torchvision==0.18.1",
+
+    # ASR stack. whisperx 3.4.x has an undeclared matplotlib dep and
+    # tightens torch>=2.5.1 (which we can't satisfy); 3.3.6 runs fine
+    # on torch 2.3.1 despite its overly-strict metadata pin.
+    "whisperx==3.3.6",
+    # transformers 5.x removed compat that whisperx 3.x relies on and
+    # silently disables PyTorch when paired with torch <2.4. Hold <5.
+    "transformers>=4.40,<5",
+
+    # Open-source diarization stack (zero-config, default). speechbrain
+    # 1.x moved EncoderClassifier to .inference.speaker; the adapter
+    # has a try/except fallback to .pretrained for 0.5.x compatibility.
+    "speechbrain>=1.0,<2",
     "silero-vad>=5",
     "scikit-learn>=1.3",
+
     # Vendored ffmpeg + ffprobe with libass, used as a fallback when the
     # system ffmpeg lacks the `ass` subtitle filter. Downloads the
     # platform-specific binary on first use (~50 MB).
     "static-ffmpeg>=3.0",
-    # pyannote stays as the opt-in upgrade for users who already have an HF
-    # token + license acceptance for pyannote/speaker-diarization-3.1.
-    "pyannote.audio>=3.1",
+
+    # pyannote stays as the opt-in upgrade for users who already have an
+    # HF token + license acceptance for pyannote/speaker-diarization-3.1.
+    "pyannote.audio>=3.3,<4",
+
+    # Vision stack.
     "opencv-python>=4.9",
     "scenedetect[opencv]>=0.6.4",
     "retina-face>=0.0.17",
     "tf-keras>=2.16",
-    "torch>=2.2",
-    "torchvision>=0.17",
+
+    # Undeclared deps the engine actually needs at import time.
+    # whisperx 3.x imports matplotlib without declaring it.
+    "matplotlib>=3.7",
+
     "numpy>=1.26",
 ]
 dev = ["pytest>=8.2", "pytest-cov>=5.0", "ruff>=0.4"]
