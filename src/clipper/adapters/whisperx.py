@@ -10,6 +10,18 @@ DEFAULT_MODEL = "large-v3"
 DIARIZATION_MODEL = "pyannote/speaker-diarization-3.1"
 _HF_TOKEN_ENV_VARS = ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN")
 
+DIARIZER_SPEECHBRAIN = "speechbrain"
+DIARIZER_PYANNOTE = "pyannote"
+DIARIZER_OFF = "off"
+DEFAULT_DIARIZER = DIARIZER_SPEECHBRAIN
+VALID_DIARIZERS: tuple[str, ...] = (
+    DIARIZER_SPEECHBRAIN,
+    DIARIZER_PYANNOTE,
+    DIARIZER_OFF,
+)
+_DIARIZER_ENV_VAR = "CLIPPER_DIARIZER"
+DEFAULT_FALLBACK_SPEAKER = "SPEAKER_00"
+
 
 class TranscriptionError(RuntimeError):
     pass
@@ -21,6 +33,21 @@ class TranscriptionConfig:
     device: str | None = None
     compute_type: str | None = None
     batch_size: int = 16
+    diarizer: str | None = None  # falls back to env var or DEFAULT_DIARIZER
+
+
+def resolve_diarizer(explicit: str | None = None) -> str:
+    """Resolve which diarizer to use, defaulting to the open-source path.
+
+    Priority: explicit arg → ``CLIPPER_DIARIZER`` env var → default.
+    """
+    raw = (explicit or os.environ.get(_DIARIZER_ENV_VAR) or DEFAULT_DIARIZER).strip().lower()
+    if raw not in VALID_DIARIZERS:
+        raise TranscriptionError(
+            f"Unsupported diarizer {raw!r}; expected one of: "
+            f"{', '.join(VALID_DIARIZERS)}"
+        )
+    return raw
 
 
 def resolve_hf_token() -> str:
@@ -29,9 +56,10 @@ def resolve_hf_token() -> str:
         if value:
             return value
     raise TranscriptionError(
-        "Diarization requires a Hugging Face token. Set HF_TOKEN and accept the "
-        f"{DIARIZATION_MODEL} license at https://hf.co/{DIARIZATION_MODEL} "
-        "before the first run."
+        "pyannote diarization requires a Hugging Face token. Set HF_TOKEN and "
+        f"accept the {DIARIZATION_MODEL} license at "
+        f"https://hf.co/{DIARIZATION_MODEL} before the first run, or unset "
+        f"{_DIARIZER_ENV_VAR} to use the default open-source diarizer."
     )
 
 
@@ -53,7 +81,7 @@ def transcribe(video_path: Path, *, config: TranscriptionConfig | None = None) -
     cfg = config or TranscriptionConfig()
     device = cfg.device or detect_device()
     compute_type = cfg.compute_type or default_compute_type(device)
-    hf_token = resolve_hf_token()
+    diarizer_choice = resolve_diarizer(cfg.diarizer)
 
     import whisperx
 
@@ -73,11 +101,84 @@ def transcribe(video_path: Path, *, config: TranscriptionConfig | None = None) -
         return_char_alignments=False,
     )
 
-    diarizer = whisperx.DiarizationPipeline(use_auth_token=hf_token, device=device)
-    diarize_segments = diarizer(audio)
-    merged = whisperx.assign_word_speakers(diarize_segments, aligned)
-
+    merged = _apply_diarization(
+        aligned=aligned,
+        audio=audio,
+        device=device,
+        diarizer_choice=diarizer_choice,
+        whisperx_module=whisperx,
+    )
     return normalize_result(merged, model=cfg.model, language=language)
+
+
+def _apply_diarization(
+    *,
+    aligned: dict,
+    audio: Any,
+    device: str,
+    diarizer_choice: str,
+    whisperx_module: Any,
+) -> dict:
+    """Attach per-segment speaker labels using the configured diarizer.
+
+    - ``speechbrain`` (default): zero-config, uses silero-VAD + ECAPA-TDNN.
+    - ``pyannote``: requires HF_TOKEN + license acceptance for the
+      ``pyannote/speaker-diarization-3.1`` model.
+    - ``off``: skip diarization; every segment gets a single fallback speaker
+      so downstream code can rely on the field being non-null.
+    """
+    if diarizer_choice == DIARIZER_OFF:
+        return _stamp_fallback_speaker(aligned, DEFAULT_FALLBACK_SPEAKER)
+
+    if diarizer_choice == DIARIZER_PYANNOTE:
+        hf_token = resolve_hf_token()
+        diarizer = whisperx_module.DiarizationPipeline(
+            use_auth_token=hf_token, device=device
+        )
+        diarize_segments = diarizer(audio)
+        # Pyannote returns an empty DataFrame for fully-silent audio. Without
+        # this guard, segments would end up with a missing `speaker` field
+        # and downstream code (mining, normalization) would treat them as
+        # unknown rather than a single fallback speaker.
+        if _diarization_is_empty(diarize_segments):
+            return _stamp_fallback_speaker(aligned, DEFAULT_FALLBACK_SPEAKER)
+        return whisperx_module.assign_word_speakers(diarize_segments, aligned)
+
+    # speechbrain (default, zero-config).
+    from clipper.adapters import speechbrain_diarize
+
+    diarize_df = speechbrain_diarize.diarize_audio(audio)
+    if _diarization_is_empty(diarize_df):
+        return _stamp_fallback_speaker(aligned, DEFAULT_FALLBACK_SPEAKER)
+    return whisperx_module.assign_word_speakers(diarize_df, aligned)
+
+
+def _diarization_is_empty(diarize_result: Any) -> bool:
+    """True when the diarizer returned no usable speaker segments.
+
+    Both pyannote and the open-source diarizer return a pandas DataFrame
+    in the happy path; this helper tolerates ``None``, empty DataFrames,
+    and empty-list-likes so future diarizer plugins don't have to also
+    return a DataFrame.
+    """
+    if diarize_result is None:
+        return True
+    try:
+        return len(diarize_result) == 0
+    except TypeError:
+        return False
+
+
+def _stamp_fallback_speaker(aligned: dict, speaker: str) -> dict:
+    """Mark every segment + word with ``speaker`` so downstream code is unconditional."""
+    for segment in aligned.get("segments", []) or []:
+        if not isinstance(segment, dict):
+            continue
+        segment.setdefault("speaker", speaker)
+        for word in segment.get("words", []) or []:
+            if isinstance(word, dict):
+                word.setdefault("speaker", speaker)
+    return aligned
 
 
 def normalize_result(raw: dict, *, model: str, language: str) -> dict:

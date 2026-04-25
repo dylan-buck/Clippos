@@ -144,8 +144,12 @@ for every rendered clip.
   (length bias, spike-category preference, ratio preference, score
   disagreement) with confidence tiers and surfaces them to the next scoring
   handoff. Rules can be promoted into the harness's memory.
-- **Local-first.** Transcription, vision, and rendering all run on your
-  machine. No video data leaves your laptop until you publish.
+- **Local-first, zero-config.** Transcription, diarization, vision, and
+  rendering all run on your machine with no API keys, no HuggingFace
+  token, and no license click-throughs. Default speaker diarization uses
+  silero-VAD + SpeechBrain ECAPA-TDNN (Apache 2.0 / CC-BY-4.0, public
+  weights). The pyannote 3.1 upgrade stays available as an opt-in for
+  users who already have an HF token.
 - **Deterministic engine, judgement delegated.** The clipper validates every
   handoff against a strict JSON schema with `clip_id`/`clip_hash` integrity
   checks, so model outputs can't silently corrupt a run.
@@ -206,8 +210,20 @@ The engine extras pull in:
   (MIT; pulls TensorFlow as a dep — model weights are ~119 MB on first run)
 - `torch` + `torchvision` — RAFT optical flow for motion scoring
   (auto-selects `mps` / `cuda` / `cpu`)
+- `speechbrain` + `silero-vad` + `scikit-learn` — open-source speaker
+  diarization (silero-VAD → ECAPA-TDNN embeddings → spectral clustering).
+  Public weights, no token, no license click-through.
 
-Diarization requires a Hugging Face account:
+### Diarization (zero-config)
+
+Diarization runs out of the box. The default stack uses silero-VAD plus
+SpeechBrain's `speechbrain/spkrec-ecapa-voxceleb` ECAPA-TDNN model — both
+are public, both auto-cache locally on first use, neither requires a
+HuggingFace token.
+
+If you want the higher-quality `pyannote/speaker-diarization-3.1` upgrade,
+opt in with `CLIPPER_DIARIZER=pyannote`. That path requires a one-time
+HuggingFace setup:
 
 1. Create a token at <https://huggingface.co/settings/tokens>.
 2. Accept the license for `pyannote/speaker-diarization-3.1` at
@@ -216,9 +232,11 @@ Diarization requires a Hugging Face account:
 
    ```bash
    export HF_TOKEN=hf_...
+   export CLIPPER_DIARIZER=pyannote
    ```
 
-   `HUGGING_FACE_HUB_TOKEN` and `HUGGINGFACE_HUB_TOKEN` are also accepted.
+   `HUGGING_FACE_HUB_TOKEN` and `HUGGINGFACE_HUB_TOKEN` are also accepted
+   for the token. `CLIPPER_DIARIZER=off` skips diarization entirely.
 
 Run the checks used in local development:
 
@@ -232,15 +250,16 @@ path on an actual file:
 
 ```bash
 pip install -e ".[engine,dev]"
-export HF_TOKEN=hf_...
 export CLIPPER_E2E_VIDEO=/absolute/path/to/5-10-minute-video.mp4
 .venv/bin/pytest -m e2e -v
 ```
 
-That test runs real probe, WhisperX/pyannote transcription, RetinaFace-ResNet50
-face detection, RAFT optical flow, JSON scoring handoff, approval, and FFmpeg
-rendering. It skips cleanly unless `CLIPPER_E2E_VIDEO`, FFmpeg/ffprobe, engine
-dependencies, and a Hugging Face token are available.
+That test runs real probe, WhisperX transcription, the open-source
+diarizer, RetinaFace-ResNet50 face detection, RAFT optical flow, JSON
+scoring handoff, approval, and FFmpeg rendering. It skips cleanly unless
+`CLIPPER_E2E_VIDEO`, FFmpeg/ffprobe, and engine dependencies are
+available. To exercise the pyannote path instead, also set `HF_TOKEN`
+plus `CLIPPER_DIARIZER=pyannote`.
 
 ## CLI Flow
 
@@ -320,11 +339,10 @@ through the skill rather than hand-editing:
   --output-dir "$HOME/Documents/ClipperTool" \
   --ratios "9:16,1:1,16:9" \
   --approve-top 3 \
-  --min-score 0.70 \
-  --hf-token "$HF_TOKEN"
+  --min-score 0.70
 ```
 
-Supported keys:
+Supported keys (all optional):
 
 ```env
 CLIPPER_OUTPUT_DIR=~/Documents/ClipperTool
@@ -332,6 +350,9 @@ CLIPPER_RATIOS=9:16,1:1,16:9
 CLIPPER_MAX_CANDIDATES=12
 CLIPPER_APPROVE_TOP=3
 CLIPPER_MIN_SCORE=0.70
+# Optional. Default diarizer is the open-source SpeechBrain stack (no token).
+# Set CLIPPER_DIARIZER=pyannote and HF_TOKEN to opt into the pyannote upgrade.
+CLIPPER_DIARIZER=speechbrain
 HF_TOKEN=hf_...
 ```
 
@@ -346,8 +367,9 @@ Pick any known-good local video 5–10 minutes long.
 1. **Install.** `ln -s $(pwd) ~/.hermes/skills/clip` (or the Claude
    Code / Codex equivalent above).
 2. **Configure.** In your agent, run `/clip config --output-dir
-   ~/Documents/ClipperTool --hf-token "$HF_TOKEN"` (Hermes) or
-   `/clip-config ...` (Claude Code / Codex). Writes the `.env`.
+   ~/Documents/ClipperTool` (Hermes) or `/clip-config ...` (Claude Code /
+   Codex). Writes the `.env`. **No HuggingFace token needed** — diarization
+   uses the open-source SpeechBrain stack by default.
 3. **Clip.** Run `/clip ~/Downloads/sample-talk.mp4 --ratios 9:16,1:1
    --clips 2`. The agent scores each candidate with its active model,
    the skill auto-approves the top 2 and renders them, and the agent

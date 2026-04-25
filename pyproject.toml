@@ -11,6 +11,12 @@ dependencies = ["typer>=0.12", "pydantic>=2.7"]
 [project.optional-dependencies]
 engine = [
     "whisperx>=3.1",
+    # Open-source diarization stack (zero-config, default).
+    "speechbrain>=1.0",
+    "silero-vad>=5",
+    "scikit-learn>=1.3",
+    # pyannote stays as the opt-in upgrade for users who already have an HF
+    # token + license acceptance for pyannote/speaker-diarization-3.1.
     "pyannote.audio>=3.1",
     "opencv-python>=4.9",
     "scenedetect[opencv]>=0.6.4",

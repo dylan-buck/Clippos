@@ -71,7 +71,14 @@ def build_parser() -> argparse.ArgumentParser:
     config_write = subparsers.add_parser("config-write")
     config_write.add_argument("--config", type=Path, default=CONFIG_PATH)
     config_write.add_argument("--output-dir", type=Path)
-    config_write.add_argument("--hf-token")
+    config_write.add_argument(
+        "--hf-token",
+        help=(
+            "Hugging Face token; only needed to opt into pyannote "
+            "diarization (CLIPPER_DIARIZER=pyannote). The default "
+            "open-source diarizer works without a token."
+        ),
+    )
     config_write.add_argument("--ratios")
     config_write.add_argument("--max-candidates", type=int)
     config_write.add_argument("--approve-top", type=int)
@@ -164,9 +171,20 @@ def cmd_config_check(args: argparse.Namespace) -> int:
             "ass": ffmpeg_filter_available("ass"),
         },
         "env": {
-            "HF_TOKEN": bool(resolve_hf_token(config)),
             "CLIPPER_OUTPUT_DIR": bool(config.get("CLIPPER_OUTPUT_DIR")),
             "CLIPPER_RATIOS": bool(config.get("CLIPPER_RATIOS")),
+        },
+        # HF_TOKEN moved out of `env` to make explicit that it is no longer
+        # required. The default diarizer is the open-source SpeechBrain
+        # stack; HF_TOKEN unlocks the pyannote upgrade.
+        "optional_upgrades": {
+            "hf_token": {
+                "available": bool(resolve_hf_token(config)),
+                "enables": (
+                    "pyannote/speaker-diarization-3.1 "
+                    "(set CLIPPER_DIARIZER=pyannote)"
+                ),
+            },
         },
         "defaults": resolved_defaults(config),
     }

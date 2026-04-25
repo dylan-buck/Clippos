@@ -137,10 +137,30 @@ If neither `HERMES_SKILL_DIR` nor `CLAUDE_PLUGIN_ROOT` is set and the caller
 is not in the repo directory, export `CLIPPER_ROOT` explicitly — the prologue
 will not discover the skill on its own.
 
-If `HF_TOKEN` is missing and no cached transcript exists, use `/clip config` or
-ask the user for setup. The real pipeline needs FFmpeg, ffprobe, an FFmpeg
-build with the `ass` subtitle filter (libass), engine extras, and a Hugging Face
-token for WhisperX/pyannote diarization.
+### Diarization (zero-config by default)
+
+The skill ships with a zero-config open-source diarizer (silero-VAD +
+SpeechBrain ECAPA-TDNN + spectral clustering). No HuggingFace token, no
+license click-through. Models are public and auto-cache on first use.
+
+`CLIPPER_DIARIZER` (env var or `--diarizer` flag) chooses the path:
+
+- `speechbrain` (default) — open-source, no setup. Recommended.
+- `pyannote` — opt-in upgrade. Requires `HF_TOKEN` and one-time license
+  acceptance at <https://hf.co/pyannote/speaker-diarization-3.1>. Slightly
+  higher quality but the gate is a real onboarding cost.
+- `off` — skip diarization entirely. Every segment gets `SPEAKER_00`. Use
+  for single-speaker content where speaker labels add no value.
+
+Only mention the pyannote path if the user explicitly asks for higher
+diarization quality.
+
+The real pipeline needs FFmpeg, ffprobe, an FFmpeg build with the `ass`
+subtitle filter (libass), and engine extras. **HF_TOKEN is no longer
+required** for the default open-source diarizer; the preflight reports it
+as missing but the run will succeed without it. Only ask the user for an
+HF token if they explicitly want the pyannote upgrade (see "Diarization"
+above).
 
 Every subsequent bash block assumes `CLIPPER_ROOT` and `CLIPPER_PYTHON` are
 resolved with the same four-line prologue.

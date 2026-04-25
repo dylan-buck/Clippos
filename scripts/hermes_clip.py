@@ -147,9 +147,8 @@ def cmd_preflight(args: argparse.Namespace) -> int:
         missing.append("ffprobe")
     if not ass_filter:
         missing.append("ffmpeg-libass")
-    if not clip_skill.resolve_hf_token(config):
-        missing.append("HF_TOKEN")
 
+    has_hf_token = bool(clip_skill.resolve_hf_token(config))
     ready = not missing
     next_action = "ready" if ready else "configure"
     payload: dict[str, Any] = {
@@ -160,11 +159,23 @@ def cmd_preflight(args: argparse.Namespace) -> int:
         "ffmpeg_filters": {"ass": ass_filter},
         "config_path": str(args.config.expanduser()),
         "defaults": clip_skill.resolved_defaults(config),
+        # HF_TOKEN is no longer a hard requirement — the default diarizer is
+        # the open-source SpeechBrain stack. Surface the token status as an
+        # optional upgrade so the harness can offer pyannote when the user
+        # asks for the highest-quality multi-speaker setup.
+        "optional_upgrades": {
+            "hf_token": {
+                "available": has_hf_token,
+                "enables": "pyannote/speaker-diarization-3.1 (set CLIPPER_DIARIZER=pyannote)",
+            },
+        },
     }
     if not ready:
         payload["instructions"] = (
-            "Run `/clip config` to set missing values. HF_TOKEN enables real "
-            "transcription + diarization; without it only cached transcripts work."
+            "Run `/clip config` to fix missing system requirements (FFmpeg + "
+            "libass). Diarization works out of the box without HF_TOKEN; the "
+            "token is only needed if the user explicitly wants the pyannote "
+            "upgrade."
         )
     _emit(payload)
     return 0

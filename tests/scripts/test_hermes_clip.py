@@ -47,7 +47,13 @@ def test_preflight_reports_missing_requirements(tmp_path: Path) -> None:
     assert "missing" in payload
     assert "bins" in payload
     assert "ffmpeg_filters" in payload
-    assert "HF_TOKEN" in payload["missing"]
+    # HF_TOKEN is no longer a hard requirement — diarization works out of
+    # the box. The token surfaces as an optional upgrade so the harness can
+    # offer pyannote when the user explicitly asks for higher quality.
+    assert "HF_TOKEN" not in payload["missing"]
+    assert "optional_upgrades" in payload
+    assert payload["optional_upgrades"]["hf_token"]["available"] is False
+    assert "pyannote" in payload["optional_upgrades"]["hf_token"]["enables"]
 
 
 def test_advance_rejects_missing_source_and_workspace(tmp_path: Path) -> None:

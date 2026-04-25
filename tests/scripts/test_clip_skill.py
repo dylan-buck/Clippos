@@ -89,7 +89,12 @@ def test_config_check_reports_missing_requirements(tmp_path: Path) -> None:
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["config_path"] == str(tmp_path / "missing.env")
-    assert payload["env"]["HF_TOKEN"] is False
+    # HF_TOKEN moved from `env` (where presence implied requiredness) to
+    # `optional_upgrades` to reflect that it is now optional. The default
+    # diarizer is the open-source SpeechBrain stack.
+    assert "HF_TOKEN" not in payload.get("env", {})
+    assert payload["optional_upgrades"]["hf_token"]["available"] is False
+    assert "pyannote" in payload["optional_upgrades"]["hf_token"]["enables"]
     assert "ffmpeg" in payload["bins"]
     assert "ffprobe" in payload["bins"]
     assert "ass" in payload["ffmpeg_filters"]

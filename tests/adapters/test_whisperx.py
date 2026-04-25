@@ -9,11 +9,15 @@ import pytest
 
 from clipper.adapters import whisperx as whisperx_adapter
 from clipper.adapters.whisperx import (
+    DIARIZER_OFF,
+    DIARIZER_PYANNOTE,
+    DIARIZER_SPEECHBRAIN,
     TranscriptionConfig,
     TranscriptionError,
     default_compute_type,
     detect_device,
     normalize_result,
+    resolve_diarizer,
     resolve_hf_token,
     transcribe,
 )
@@ -21,8 +25,13 @@ from clipper.pipeline.transcribe import build_transcript_timeline
 
 
 @pytest.fixture(autouse=True)
-def _clear_hf_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN"):
+def _clear_diarizer_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "HF_TOKEN",
+        "HUGGING_FACE_HUB_TOKEN",
+        "HUGGINGFACE_HUB_TOKEN",
+        "CLIPPER_DIARIZER",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -377,6 +386,7 @@ def test_transcribe_composes_whisperx_and_pyannote_calls(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("HF_TOKEN", "hf-token")
+    monkeypatch.setenv("CLIPPER_DIARIZER", DIARIZER_PYANNOTE)
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
 
@@ -473,16 +483,184 @@ def test_transcribe_composes_whisperx_and_pyannote_calls(
     assert result["segments"][0]["words"][0]["text"] == "Hi"
 
 
-def test_transcribe_refuses_without_hf_token(
+def test_transcribe_pyannote_path_refuses_without_hf_token(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """The pyannote path still requires HF_TOKEN.
+
+    The default path is now speechbrain (zero-config), so a missing token is
+    only an error when the user explicitly opts into pyannote.
+    """
+    monkeypatch.setenv("CLIPPER_DIARIZER", DIARIZER_PYANNOTE)
     video = tmp_path / "input.mp4"
     video.write_bytes(b"fake")
 
-    monkeypatch.setitem(sys.modules, "whisperx", SimpleNamespace())
+    fake_whisperx = _build_fake_whisperx({}, raise_assign=False)
+    monkeypatch.setitem(sys.modules, "whisperx", fake_whisperx)
 
-    with pytest.raises(TranscriptionError):
+    with pytest.raises(TranscriptionError) as excinfo:
         transcribe(video)
+    # The error must mention HF_TOKEN AND point at the env var so users know
+    # they can switch back to the open-source default.
+    message = str(excinfo.value)
+    assert "Hugging Face token" in message
+    assert "CLIPPER_DIARIZER" in message
+
+
+def test_transcribe_default_path_uses_speechbrain_diarizer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No env vars set → speechbrain runs, pyannote is never touched."""
+    pd = pytest.importorskip("pandas")
+    video = tmp_path / "input.mp4"
+    video.write_bytes(b"fake")
+
+    diarize_calls: list[object] = []
+
+    def fake_diarize_audio(audio):
+        diarize_calls.append(audio)
+        return pd.DataFrame(
+            [{"start": 0.0, "end": 0.5, "speaker": "SPEAKER_00"}]
+        )
+
+    # Patch the attribute on the real (already-loaded) module so suite order
+    # doesn't matter — `monkeypatch.setitem(sys.modules, ...)` only takes
+    # effect when the module hasn't been imported yet, which other tests
+    # in the suite may already have done.
+    from clipper.adapters import speechbrain_diarize as _sd
+
+    monkeypatch.setattr(_sd, "diarize_audio", fake_diarize_audio)
+
+    pyannote_called: list[bool] = []
+
+    class ExplodingDiarizer:
+        def __init__(self, *args, **kwargs):
+            pyannote_called.append(True)
+
+        def __call__(self, audio):
+            raise AssertionError("pyannote must not be called on the default path")
+
+    fake_whisperx = _build_fake_whisperx({}, ExplodingDiarizer=ExplodingDiarizer)
+    monkeypatch.setitem(sys.modules, "whisperx", fake_whisperx)
+
+    result = transcribe(video, config=TranscriptionConfig(device="cpu", compute_type="int8"))
+
+    assert diarize_calls == ["audio-array"]
+    assert pyannote_called == []
+    assert result["segments"][0]["speaker"] == "SPEAKER_00"
+
+
+def test_transcribe_pyannote_path_falls_back_to_default_speaker_on_empty_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Pyannote returns an empty DataFrame for fully-silent audio. Without
+    a guard, segments end up speakerless. The fallback path must apply
+    the same default speaker the speechbrain-empty path uses."""
+    pd = pytest.importorskip("pandas")
+    monkeypatch.setenv("HF_TOKEN", "hf-token")
+    monkeypatch.setenv("CLIPPER_DIARIZER", DIARIZER_PYANNOTE)
+    video = tmp_path / "input.mp4"
+    video.write_bytes(b"fake")
+
+    class EmptyDiarizer:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __call__(self, audio):
+            return pd.DataFrame(columns=["start", "end", "speaker"])
+
+    def assign_must_not_run(diarize_df, aligned):
+        raise AssertionError(
+            "assign_word_speakers must not run on the empty-result path"
+        )
+
+    fake_whisperx = SimpleNamespace(
+        load_audio=lambda _path: "audio-array",
+        load_model=lambda *_a, **_k: SimpleNamespace(
+            transcribe=lambda audio, batch_size: {
+                "language": "en",
+                "segments": [
+                    {
+                        "start": 0.0,
+                        "end": 0.5,
+                        "text": "Hi",
+                        "words": [
+                            {"word": "Hi", "start": 0.0, "end": 0.5, "score": 0.9}
+                        ],
+                    }
+                ],
+            }
+        ),
+        load_align_model=lambda **_k: ("aligner", {}),
+        align=lambda *_a, **_k: {
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 0.5,
+                    "text": "Hi",
+                    "words": [{"word": "Hi", "start": 0.0, "end": 0.5, "score": 0.9}],
+                }
+            ]
+        },
+        DiarizationPipeline=EmptyDiarizer,
+        assign_word_speakers=assign_must_not_run,
+    )
+    monkeypatch.setitem(sys.modules, "whisperx", fake_whisperx)
+
+    result = transcribe(
+        video, config=TranscriptionConfig(device="cpu", compute_type="int8")
+    )
+
+    assert result["segments"][0]["speaker"] == whisperx_adapter.DEFAULT_FALLBACK_SPEAKER
+
+
+def test_transcribe_off_path_stamps_fallback_speaker_without_diarizing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """CLIPPER_DIARIZER=off → no diarizer touched, every segment gets the
+    fallback speaker so downstream code can rely on the field."""
+    monkeypatch.setenv("CLIPPER_DIARIZER", DIARIZER_OFF)
+    video = tmp_path / "input.mp4"
+    video.write_bytes(b"fake")
+
+    def explode_speechbrain(audio):
+        raise AssertionError("speechbrain must not run when diarizer is off")
+
+    from clipper.adapters import speechbrain_diarize as _sd
+
+    monkeypatch.setattr(_sd, "diarize_audio", explode_speechbrain)
+
+    class ExplodingDiarizer:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("pyannote must not run when diarizer is off")
+
+    fake_whisperx = _build_fake_whisperx({}, ExplodingDiarizer=ExplodingDiarizer)
+    monkeypatch.setitem(sys.modules, "whisperx", fake_whisperx)
+
+    result = transcribe(video, config=TranscriptionConfig(device="cpu", compute_type="int8"))
+
+    assert result["segments"][0]["speaker"] == whisperx_adapter.DEFAULT_FALLBACK_SPEAKER
+
+
+def test_resolve_diarizer_defaults_to_speechbrain() -> None:
+    assert resolve_diarizer() == DIARIZER_SPEECHBRAIN
+
+
+def test_resolve_diarizer_reads_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CLIPPER_DIARIZER", "pyannote")
+    assert resolve_diarizer() == DIARIZER_PYANNOTE
+
+
+def test_resolve_diarizer_explicit_arg_wins_over_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLIPPER_DIARIZER", "pyannote")
+    assert resolve_diarizer("off") == DIARIZER_OFF
+
+
+def test_resolve_diarizer_rejects_unknown_value() -> None:
+    with pytest.raises(TranscriptionError, match="Unsupported diarizer"):
+        resolve_diarizer("magic")
 
 
 def test_transcription_config_defaults_match_quality_first_choices() -> None:
@@ -492,3 +670,79 @@ def test_transcription_config_defaults_match_quality_first_choices() -> None:
     assert config.device is None
     assert config.compute_type is None
     assert config.batch_size == 16
+    assert config.diarizer is None  # falls through to env var / default
+
+
+def _build_fake_whisperx(
+    calls: dict[str, object],
+    *,
+    ExplodingDiarizer: type | None = None,
+    raise_assign: bool = False,
+) -> SimpleNamespace:
+    """Compact helper that stitches a fake whisperx module for diarizer tests.
+
+    The pyannote-path test still uses its own bespoke fakes to assert
+    arguments; this helper covers the simpler default/off cases where we
+    only care that ASR + alignment run and a diarizer either runs or doesn't.
+    """
+
+    class FakeAsr:
+        def transcribe(self, audio, batch_size):
+            return {
+                "language": "en",
+                "segments": [
+                    {
+                        "start": 0.0,
+                        "end": 0.5,
+                        "text": "Hi",
+                        "words": [
+                            {"word": "Hi", "start": 0.0, "end": 0.5, "score": 0.9}
+                        ],
+                    }
+                ],
+            }
+
+    def fake_load_audio(_path):
+        return "audio-array"
+
+    def fake_load_model(_model, device, compute_type):
+        return FakeAsr()
+
+    def fake_load_align_model(language_code, device):
+        return ("aligner", {"metadata": True})
+
+    def fake_align(segments, *_args, **_kwargs):
+        return {
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 0.5,
+                    "text": "Hi",
+                    "words": [{"word": "Hi", "start": 0.0, "end": 0.5, "score": 0.9}],
+                }
+            ]
+        }
+
+    def fake_assign_word_speakers(diarize_df, aligned):
+        if raise_assign:
+            raise AssertionError("assign_word_speakers must not run on this path")
+        # Apply first row's speaker to the whole transcript so tests have a
+        # deterministic value to assert on.
+        if hasattr(diarize_df, "iloc") and len(diarize_df) > 0:
+            speaker = diarize_df.iloc[0]["speaker"]
+        else:
+            speaker = whisperx_adapter.DEFAULT_FALLBACK_SPEAKER
+        for segment in aligned["segments"]:
+            segment["speaker"] = speaker
+            for word in segment["words"]:
+                word["speaker"] = speaker
+        return aligned
+
+    return SimpleNamespace(
+        load_audio=fake_load_audio,
+        load_model=fake_load_model,
+        load_align_model=fake_load_align_model,
+        align=fake_align,
+        DiarizationPipeline=ExplodingDiarizer,
+        assign_word_speakers=fake_assign_word_speakers,
+    )
