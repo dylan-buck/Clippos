@@ -12,7 +12,7 @@ scripts drive this module, they do not contain its logic.
 from __future__ import annotations
 
 import json
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
