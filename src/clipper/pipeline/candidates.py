@@ -110,6 +110,66 @@ HOOK_PHRASES = (
     "this is wild",
 )
 HOOK_TOKENS = frozenset({"wait", "listen", "okay", "right", "so", "imagine", "picture"})
+
+# M3 (docs/miner-quality.md): interview-specific phrases tuned to surface
+# expert-Q&A and stock-pick / endorsement moments that monologue
+# keywords miss entirely. Activated only when speaker_interaction is
+# high (gated in `_score_window`) so they do not pollute solo-monologue
+# scoring. The dogfood video had "Bloom Energy... hands down one of the
+# best investors of all time" go undetected because the host-only
+# keyword buckets do not match interview vocabulary.
+INTERVIEW_KEYWORD_PHRASES = (
+    "the play here",
+    "what's your take",
+    "what is your take",
+    "the most important thing",
+    "if you want to follow",
+    "hands down",
+    "one of the best",
+    "the way i think about",
+    "the way i look at",
+    "my biggest position",
+    "biggest position",
+    "the trade i like",
+    "the trade i want",
+    "i'm long",
+    "i am long",
+    "i'm short",
+    "i am short",
+    "i'm a holder",
+    "im a holder",
+    "huge holder",
+    "massive holder",
+    "best investor",
+    "smartest guy",
+    "smartest people",
+    "the secret sauce",
+    "playbook",
+    "the call here",
+    "high conviction",
+)
+INTERVIEW_KEYWORDS = frozenset(
+    {
+        "long",
+        "short",
+        "position",
+        "holder",
+        "ticker",
+        "playbook",
+        "conviction",
+        "endorse",
+        "endorsed",
+        "endorsement",
+        "alpha",
+        "moat",
+        "thesis",
+        "compounding",
+        "compounder",
+        "fundamentals",
+        "valuation",
+        "multiple",
+    }
+)
 BURIED_LEAD_PHRASES = (
     "only makes sense if",
     "if you watched",
@@ -148,8 +208,23 @@ class ScoringWeights:
     motion: float = 0.08
     shot_change: float = 0.05
     face_presence: float = 0.05
-    speaker_interaction: float = 0.05
+    # M1 (docs/miner-quality.md): bumped 0.05 -> 0.12 to give multi-speaker
+    # exchanges parity with hook/keyword/payoff. The 2026-04-25 dogfood
+    # surfaced that an entire 8-min guest interview block was invisible to
+    # mining because the dominant signals (hook + keyword + payoff = 0.36
+    # combined weight) are calibrated for solo monologue patterns; a single
+    # 0.05 weight on multi-speaker activity could not compete. Interview /
+    # podcast / guest-Q&A content is a primary use case, so multi-speaker
+    # signal deserves the same weight as the other top-tier signals.
+    speaker_interaction: float = 0.12
     delivery_variance: float = 0.03
+    # M3 (docs/miner-quality.md): keyword-bucket signal gated on
+    # multi-speaker activity, so monologue scoring is unchanged. Same
+    # weight as the monologue keyword bucket — interview vocabulary
+    # ("hands down", "the play here", "long $TICKER") is just as
+    # clip-worthy as monologue vocabulary ("crazy", "insane") in its
+    # respective context.
+    interview_keyword: float = 0.12
 
 
 @dataclass(frozen=True)
@@ -169,6 +244,17 @@ class MiningConfig:
     max_overlap_ratio: float = 0.5
     rambling_motion_ceiling: float = 0.25
     rambling_keyword_floor: float = 0.05
+    # M5 (docs/miner-quality.md): a lower score floor applied inside
+    # detected interview blocks. A 0.30 score on a guest stock pick is
+    # clip-worthy in interview context; the same score on solo monologue
+    # rambling probably is not. Used by the M2 representation guarantee
+    # below to keep multi-speaker windows that didn't clear the regular
+    # score_floor but are the best (or only) candidate from their block.
+    multi_speaker_score_floor: float = 0.20
+    # M2 thresholds — what counts as an "interview block" worth
+    # guaranteeing representation for.
+    interview_block_min_seconds: float = 30.0
+    interview_block_min_transitions: int = 2
 
 
 @dataclass(frozen=True)
@@ -184,6 +270,10 @@ class WindowSignals:
     face_presence: float
     speaker_interaction: float
     delivery_variance: float
+    # M3: gated keyword signal — only non-zero when multi-speaker
+    # activity is present. See INTERVIEW_KEYWORD_PHRASES /
+    # INTERVIEW_KEYWORDS for the interview-tuned vocabulary.
+    interview_keyword: float
     buried_lead: bool
     dangling_question: bool
     rambling_middle: bool
@@ -244,6 +334,29 @@ def mine_windows(
     selected = _greedy_deduplicate(
         above_floor, max_overlap_ratio=cfg.max_overlap_ratio
     )
+
+    # M2 + M5 (docs/miner-quality.md): guarantee at least one
+    # representative window per detected interview block. Without this,
+    # the dogfood video had an entire 8-min guest interview block produce
+    # zero candidates — every window from that block scored just below
+    # the regular 0.35 floor and got discarded before backfill ran on
+    # the wider corpus. Detection runs on the actual transcript
+    # (independent of windowing) so blocks are found even when no single
+    # window inside them scored well.
+    interview_blocks = _detect_interview_blocks(
+        transcript_timeline.segments,
+        min_duration_seconds=cfg.interview_block_min_seconds,
+        min_transitions=cfg.interview_block_min_transitions,
+    )
+    if interview_blocks:
+        selected = _ensure_interview_block_representation(
+            selected,
+            scored,
+            interview_blocks,
+            multi_speaker_floor=cfg.multi_speaker_score_floor,
+            max_overlap_ratio=cfg.max_overlap_ratio,
+        )
+
     minimum = min(max_candidates, max(cfg.min_candidates, 0))
     if len(selected) < minimum:
         selected = _fill_minimum_candidates(
@@ -307,6 +420,27 @@ def score_keyword_spike(text: str) -> float:
     )
     category_hits = sum(1 for bucket in categories if tokens & bucket)
     return _clamp01(category_hits / len(categories))
+
+
+def score_interview_keyword_spike(text: str) -> float:
+    """M3 (docs/miner-quality.md): score interview-tuned vocabulary.
+
+    Returns 0.0 when there are no hits; otherwise scores in [0, 1] based
+    on combined phrase + token presence. The caller in `_score_window`
+    gates the contribution on `speaker_interaction >= 0.1` so this signal
+    only fires for multi-speaker windows — it does not apply to solo
+    monologue content where these phrases would mean something different
+    or be coincidental.
+    """
+    lowered = text.lower()
+    phrase_hits = sum(1 for phrase in INTERVIEW_KEYWORD_PHRASES if phrase in lowered)
+    tokens = set(_tokens(lowered))
+    keyword_hits = len(tokens & INTERVIEW_KEYWORDS)
+    if phrase_hits == 0 and keyword_hits == 0:
+        return 0.0
+    # Phrases are stronger signals than single tokens (a token like "long"
+    # appears in non-trading contexts; the phrase "i'm long" is unambiguous).
+    return _clamp01(0.45 * min(phrase_hits, 2) + 0.2 * min(keyword_hits, 3))
 
 
 def score_numeric_density(text: str) -> float:
@@ -460,6 +594,20 @@ def derive_spike_categories(signals: WindowSignals) -> list[str]:
         categories.append("action")
     if signals.payoff >= 0.45 and signals.numeric >= 0.12:
         categories.append("unusually_useful_claim")
+    # M4 (docs/miner-quality.md): interview-vertical spike categories.
+    # `interview_keyword` is already gated on speaker_interaction, so we
+    # don't need to re-check it here — but we do require at least a
+    # non-trivial signal to suppress noise from one-off mentions.
+    if signals.interview_keyword >= 0.2:
+        categories.append("expert_endorsement")
+    if signals.interview_keyword >= 0.1 and signals.numeric >= 0.1:
+        categories.append("specific_pick")
+    # `big_number` — concrete numeric hooks, regardless of speaker mix.
+    # High numeric density alone is a strong proxy for the "$100B in a
+    # day" / "lost $40k" pattern. The model still validates that the
+    # number is the centerpiece (this is just a hint).
+    if signals.numeric >= 0.4:
+        categories.append("big_number")
     seen: set[str] = set()
     deduped: list[str] = []
     for category in categories:
@@ -501,6 +649,17 @@ def _score_window(
     aggregate_text = " ".join(segment.text for segment in segments)
     first_text = segments[0].text
 
+    speaker_interaction = score_speaker_interaction(segments)
+    # M3: interview-keyword signal only contributes when the window has
+    # actual multi-speaker activity. Avoids polluting solo monologue
+    # scoring with words like "long" / "position" that mean something
+    # different outside of an interview-trader context.
+    interview_keyword = (
+        score_interview_keyword_spike(aggregate_text)
+        if speaker_interaction >= 0.1
+        else 0.0
+    )
+
     signals = WindowSignals(
         hook=score_hook_strength(first_text),
         keyword=score_keyword_spike(aggregate_text),
@@ -511,8 +670,9 @@ def _score_window(
         motion=score_motion_density(frames, start, end),
         shot_change=score_shot_change_density(frames, start, end),
         face_presence=score_face_presence(frames, start, end),
-        speaker_interaction=score_speaker_interaction(segments),
+        speaker_interaction=speaker_interaction,
         delivery_variance=score_delivery_variance(segments),
+        interview_keyword=interview_keyword,
         buried_lead=has_buried_lead(first_text),
         dangling_question=has_dangling_question(segments),
         rambling_middle=is_rambling_middle(
@@ -536,6 +696,7 @@ def _score_window(
         + cfg.weights.face_presence * signals.face_presence
         + cfg.weights.speaker_interaction * signals.speaker_interaction
         + cfg.weights.delivery_variance * signals.delivery_variance
+        + cfg.weights.interview_keyword * signals.interview_keyword
     )
     penalty = 0.0
     if signals.buried_lead:
@@ -603,6 +764,192 @@ def _fill_minimum_candidates(
         if len(filled) >= minimum:
             break
     return filled
+
+
+@dataclass(frozen=True)
+class InterviewBlock:
+    """A contiguous transcript stretch with substantial multi-speaker
+    activity (M2 in docs/miner-quality.md).
+
+    The block boundaries are inclusive segment-time bounds. The block is
+    used purely for selection purposes — it does not change scoring or
+    spike-category derivation, only ensures at least one window from
+    inside it survives candidate selection."""
+    start_seconds: float
+    end_seconds: float
+    speakers: frozenset[str]
+    transition_count: int
+
+
+def _detect_interview_blocks(
+    segments: list[TranscriptSegment],
+    *,
+    min_duration_seconds: float,
+    min_transitions: int,
+) -> list[InterviewBlock]:
+    """Find contiguous stretches with substantial multi-speaker activity.
+
+    A "block" is a contiguous run of segments where:
+      - duration >= min_duration_seconds, and
+      - the run contains at least min_transitions speaker changes, and
+      - at least two distinct speakers participate.
+
+    Blocks merge adjacent multi-speaker activity even when separated by
+    short single-speaker gaps (<10s) so the long-run guest interview
+    block in the dogfood video is one block, not many fragments.
+    """
+    if len(segments) < 2:
+        return []
+    # First pass: find every speaker transition.
+    transition_indices = [
+        i
+        for i in range(1, len(segments))
+        if segments[i].speaker != segments[i - 1].speaker
+    ]
+    if not transition_indices:
+        return []
+
+    # Greedy block builder: walk transitions, accumulate them into a
+    # current run as long as adjacent transitions are within `merge_gap`
+    # seconds of each other. This collapses Q-A-Q-A patterns into one
+    # block instead of fragmenting on every back-and-forth.
+    merge_gap = 10.0
+    runs: list[list[int]] = []
+    current: list[int] = []
+    for idx in transition_indices:
+        if not current:
+            current = [idx]
+            continue
+        prev_idx = current[-1]
+        gap = segments[idx].start_seconds - segments[prev_idx].end_seconds
+        if gap <= merge_gap:
+            current.append(idx)
+        else:
+            runs.append(current)
+            current = [idx]
+    if current:
+        runs.append(current)
+
+    blocks: list[InterviewBlock] = []
+    # Only include a bookend segment (the speaker immediately before the
+    # first transition / after the last) when it sits within this many
+    # seconds of the alternation. Otherwise we accidentally pull in a
+    # whole adjacent monologue and the block range bleeds into solo
+    # content. The dogfood test data had a 10s gap between the host
+    # monologue and the guest's arrival — the bookend logic was
+    # absorbing the whole prior monologue into the "interview block",
+    # which then satisfied the M2 guarantee with a host-only window.
+    bookend_max_gap_seconds = 5.0
+    for run in runs:
+        if len(run) < min_transitions:
+            continue
+        start_idx = run[0]
+        if start_idx > 0:
+            gap = segments[start_idx].start_seconds - segments[start_idx - 1].end_seconds
+            if gap <= bookend_max_gap_seconds:
+                start_idx -= 1
+        end_idx = run[-1]
+        if end_idx < len(segments) - 1:
+            gap = segments[end_idx + 1].start_seconds - segments[end_idx].end_seconds
+            if gap <= bookend_max_gap_seconds:
+                end_idx += 1
+        block_segments = segments[start_idx : end_idx + 1]
+        duration = (
+            block_segments[-1].end_seconds - block_segments[0].start_seconds
+        )
+        if duration < min_duration_seconds:
+            continue
+        speakers = frozenset(
+            seg.speaker for seg in block_segments if seg.speaker
+        )
+        if len(speakers) < 2:
+            continue
+        blocks.append(
+            InterviewBlock(
+                start_seconds=block_segments[0].start_seconds,
+                end_seconds=block_segments[-1].end_seconds,
+                speakers=speakers,
+                transition_count=len(run),
+            )
+        )
+    return blocks
+
+
+def _ensure_interview_block_representation(
+    selected: list[ScoredWindow],
+    scored: list[ScoredWindow],
+    blocks: list[InterviewBlock],
+    *,
+    multi_speaker_floor: float,
+    max_overlap_ratio: float,
+) -> list[ScoredWindow]:
+    """For each detected interview block, guarantee at least one
+    representative scored window enters the final selection.
+
+    The 2026-04-25 dogfood produced zero candidates from an 8-minute
+    guest interview because every window inside it scored just below
+    the regular `score_floor` (0.35). This pass relaxes the floor to
+    `multi_speaker_floor` (default 0.20) for windows that overlap a
+    detected block, picks the best one not already represented, and
+    inserts it into `selected` while still respecting the dedup ratio
+    against existing selections.
+    """
+    if not blocks:
+        return selected
+    enriched = list(selected)
+    for block in blocks:
+        if _block_already_represented(block, enriched):
+            continue
+        # Find the highest-scoring window that overlaps this block AND
+        # clears the relaxed floor. `scored` is already sorted descending.
+        appended = False
+        for candidate in scored:
+            if candidate.score < multi_speaker_floor:
+                # Sorted desc — nothing remaining can clear the floor.
+                break
+            if not _window_overlaps_block(candidate, block):
+                continue
+            if any(
+                _overlap_ratio(candidate, existing) > max_overlap_ratio
+                for existing in enriched
+            ):
+                continue
+            enriched.append(candidate)
+            appended = True
+            break
+        if appended:
+            continue
+        # If still no representative, fall back to any overlapping window
+        # that doesn't dedup-collide. Better to surface a marginal clip
+        # the model can reject than to leave the block invisible. (Note:
+        # the `for...else` idiom doesn't work here because both the
+        # below-floor break and the success break would skip the else.)
+        for candidate in scored:
+            if not _window_overlaps_block(candidate, block):
+                continue
+            if any(
+                _overlap_ratio(candidate, existing) > max_overlap_ratio
+                for existing in enriched
+            ):
+                continue
+            enriched.append(candidate)
+            break
+    return enriched
+
+
+def _block_already_represented(
+    block: InterviewBlock, selected: list[ScoredWindow]
+) -> bool:
+    return any(_window_overlaps_block(window, block) for window in selected)
+
+
+def _window_overlaps_block(window: ScoredWindow, block: InterviewBlock) -> bool:
+    overlap = max(
+        0.0,
+        min(window.end_seconds, block.end_seconds)
+        - max(window.start_seconds, block.start_seconds),
+    )
+    return overlap > 0.0
 
 
 def _overlap_ratio(a: ScoredWindow, b: ScoredWindow) -> float:

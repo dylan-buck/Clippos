@@ -60,6 +60,7 @@ def _signals(**overrides) -> WindowSignals:
         "face_presence": 0.7,
         "speaker_interaction": 0.0,
         "delivery_variance": 0.2,
+        "interview_keyword": 0.0,
         "buried_lead": False,
         "dangling_question": False,
         "rambling_middle": False,

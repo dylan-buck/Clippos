@@ -14,6 +14,13 @@ SpikeCategory = Literal[
     "absurdity",
     "action",
     "unusually_useful_claim",
+    # M4 (docs/miner-quality.md) — interview / podcast vertical.
+    "expert_endorsement",
+    "specific_pick",
+    # Resurfaced from earlier work that was reset away during the
+    # 2026-04-25 sync. Numeric / market-move hooks are clip-worthy
+    # enough to deserve their own category.
+    "big_number",
 ]
 
 PenaltyCategory = Literal[
@@ -31,6 +38,9 @@ SPIKE_CATEGORIES: tuple[SpikeCategory, ...] = (
     "absurdity",
     "action",
     "unusually_useful_claim",
+    "expert_endorsement",
+    "specific_pick",
+    "big_number",
 )
 
 PENALTY_CATEGORIES: tuple[PenaltyCategory, ...] = (

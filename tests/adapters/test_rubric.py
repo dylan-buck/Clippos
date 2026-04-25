@@ -28,6 +28,10 @@ def test_rubric_prompt_covers_all_spike_categories() -> None:
         "absurdity",
         "action",
         "unusually_useful_claim",
+        # M4 (docs/miner-quality.md) — interview / podcast vertical.
+        "expert_endorsement",
+        "specific_pick",
+        "big_number",
     ):
         assert category in prompt, f"missing spike category: {category}"
 
@@ -64,6 +68,10 @@ def test_build_response_schema_locks_spike_and_penalty_enums() -> None:
         "absurdity",
         "action",
         "unusually_useful_claim",
+        # M4 (docs/miner-quality.md) — interview / podcast vertical.
+        "expert_endorsement",
+        "specific_pick",
+        "big_number",
     }
     assert set(score_item["properties"]["penalties"]["items"]["enum"]) == {
         "buried_lead",

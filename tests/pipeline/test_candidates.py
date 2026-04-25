@@ -5,7 +5,9 @@ import pytest
 from clipper.pipeline.candidates import (
     DurationPolicy,
     MiningConfig,
+    ScoringWeights,
     WindowSignals,
+    _detect_interview_blocks,
     derive_reasons,
     derive_spike_categories,
     enumerate_segment_windows,
@@ -17,6 +19,7 @@ from clipper.pipeline.candidates import (
     score_face_presence,
     score_hook_strength,
     score_interjection_density,
+    score_interview_keyword_spike,
     score_keyword_spike,
     score_motion_density,
     score_numeric_density,
@@ -330,6 +333,7 @@ def test_derive_spike_categories_reflects_signal_mix() -> None:
         face_presence=0.9,
         speaker_interaction=0.2,
         delivery_variance=0.0,
+        interview_keyword=0.0,
         buried_lead=False,
         dangling_question=False,
         rambling_middle=False,
@@ -346,6 +350,7 @@ def test_derive_spike_categories_reflects_signal_mix() -> None:
         face_presence=0.5,
         speaker_interaction=0.0,
         delivery_variance=0.0,
+        interview_keyword=0.0,
         buried_lead=False,
         dangling_question=False,
         rambling_middle=False,
@@ -368,6 +373,7 @@ def test_derive_reasons_includes_clarity_fallback() -> None:
         face_presence=0.0,
         speaker_interaction=0.0,
         delivery_variance=0.0,
+        interview_keyword=0.0,
         buried_lead=False,
         dangling_question=False,
         rambling_middle=False,
@@ -532,3 +538,307 @@ def test_generate_candidates_fills_minimum_from_next_best_windows(
         "clip-003",
         "clip-004",
     ]
+
+
+# ---------- M1: speaker_interaction weight bump ----------
+
+
+def test_speaker_interaction_weight_now_at_parity_with_keyword() -> None:
+    """M1 (docs/miner-quality.md): the weight bumped 0.05 -> 0.12 so
+    multi-speaker exchanges have parity with hook/keyword/payoff. A
+    regression that re-narrows the gap would silently re-create the
+    dogfood failure where interview content scored too low to make
+    the floor."""
+    weights = ScoringWeights()
+    assert weights.speaker_interaction == 0.12
+    assert weights.speaker_interaction == weights.keyword
+    assert weights.speaker_interaction == weights.payoff
+
+
+# ---------- M3: interview keyword bucket ----------
+
+
+def test_interview_keyword_spike_fires_on_endorsement_phrases() -> None:
+    """The interview keyword bucket exists to surface guest stock-pick /
+    endorsement moments that monologue keywords miss. Verify some real
+    phrases from the dogfood video would fire it."""
+    bloom_endorsement = (
+        "I think if you want to follow the playbook, Bloom Energy "
+        "is hands down one of the best investments right now."
+    )
+    monologue_buzz = (
+        "This is wild. The whole thing is crazy and absolutely insane."
+    )
+
+    interview_score = score_interview_keyword_spike(bloom_endorsement)
+    monologue_score = score_interview_keyword_spike(monologue_buzz)
+
+    assert interview_score > 0.4, (
+        "interview-tuned phrases must score; this is the dogfood failure mode"
+    )
+    assert monologue_score == 0.0, (
+        "pure monologue buzzwords must NOT trigger interview-keyword "
+        "scoring — that would pollute solo-content scoring"
+    )
+
+
+def test_interview_keyword_signal_is_gated_on_speaker_interaction() -> None:
+    """Even if the text contains interview phrases, the contribution
+    is gated on speaker_interaction >= 0.1 so a solo monologue saying
+    "hands down the best" doesn't get the multi-speaker bonus."""
+    # Build two transcripts with identical text but different speaker mix.
+    interview_text = (
+        "If you want to follow the playbook, Bloom Energy is hands down "
+        "one of the best long ideas — my biggest position for two years now."
+    )
+    interview_segments = build_transcript_timeline(
+        {
+            "segments": [
+                {
+                    "speaker": "host",
+                    "start_seconds": 0.0,
+                    "end_seconds": 8.0,
+                    "text": "What's your highest conviction idea right now?",
+                    "words": [],
+                },
+                {
+                    "speaker": "guest",
+                    "start_seconds": 8.0,
+                    "end_seconds": 30.0,
+                    "text": interview_text,
+                    "words": [],
+                },
+                {
+                    "speaker": "host",
+                    "start_seconds": 30.0,
+                    "end_seconds": 36.0,
+                    "text": "Tell me more about the thesis there.",
+                    "words": [],
+                },
+            ]
+        }
+    )
+    monologue_segments = build_transcript_timeline(
+        {
+            "segments": [
+                {
+                    "speaker": "host",
+                    "start_seconds": 0.0,
+                    "end_seconds": 8.0,
+                    "text": "Let me share my highest conviction idea right now.",
+                    "words": [],
+                },
+                {
+                    "speaker": "host",
+                    "start_seconds": 8.0,
+                    "end_seconds": 30.0,
+                    "text": interview_text,
+                    "words": [],
+                },
+                {
+                    "speaker": "host",
+                    "start_seconds": 30.0,
+                    "end_seconds": 36.0,
+                    "text": "I'll explain the thesis next.",
+                    "words": [],
+                },
+            ]
+        }
+    )
+    vision_timeline = build_vision_timeline({"frames": []})
+
+    interview_candidates = generate_candidates(
+        interview_segments, vision_timeline, max_candidates=5,
+        config=MiningConfig(score_floor=0.0, min_candidates=0),
+    )
+    monologue_candidates = generate_candidates(
+        monologue_segments, vision_timeline, max_candidates=5,
+        config=MiningConfig(score_floor=0.0, min_candidates=0),
+    )
+
+    # The interview version should outscore the monologue version since
+    # the interview-keyword signal is gated on speaker_interaction.
+    interview_top_score = max(c.score for c in interview_candidates)
+    monologue_top_score = max(c.score for c in monologue_candidates)
+    assert interview_top_score > monologue_top_score, (
+        f"interview ({interview_top_score:.3f}) should outscore monologue "
+        f"({monologue_top_score:.3f}) when interview keywords + multi-speaker "
+        "activity coincide"
+    )
+
+
+# ---------- M2: interview-block detection + emission guarantee ----------
+
+
+def test_detect_interview_blocks_finds_multi_speaker_stretches() -> None:
+    """The block detector identifies contiguous transcript stretches with
+    real multi-speaker activity so the M2 representation guarantee can
+    target them. Single-speaker stretches must NOT be flagged."""
+    segments = build_transcript_timeline(
+        {
+            "segments": [
+                # 0-60s: host-only monologue
+                {"speaker": "host", "start_seconds": 0.0, "end_seconds": 30.0,
+                 "text": "Long monologue about market conditions.", "words": []},
+                {"speaker": "host", "start_seconds": 30.0, "end_seconds": 60.0,
+                 "text": "More monologue here.", "words": []},
+                # 60-120s: alternating host + guest (interview block)
+                {"speaker": "guest", "start_seconds": 60.0, "end_seconds": 75.0,
+                 "text": "I'm a massive Bloom Energy holder.", "words": []},
+                {"speaker": "host", "start_seconds": 75.0, "end_seconds": 80.0,
+                 "text": "Why?", "words": []},
+                {"speaker": "guest", "start_seconds": 80.0, "end_seconds": 110.0,
+                 "text": "Hands down one of the best long ideas right now.", "words": []},
+                {"speaker": "host", "start_seconds": 110.0, "end_seconds": 120.0,
+                 "text": "Tell me more.", "words": []},
+                # 120-180s: host-only outro
+                {"speaker": "host", "start_seconds": 120.0, "end_seconds": 180.0,
+                 "text": "Closing thoughts from the host alone.", "words": []},
+            ]
+        }
+    )
+
+    blocks = _detect_interview_blocks(
+        segments.segments,
+        min_duration_seconds=30.0,
+        min_transitions=2,
+    )
+
+    # Exactly one block — the middle alternating stretch.
+    assert len(blocks) == 1
+    block = blocks[0]
+    assert block.start_seconds < 75.0  # captures host->guest entry turn
+    assert block.end_seconds > 110.0   # captures guest->host exit turn
+    assert {"host", "guest"} <= block.speakers
+    assert block.transition_count >= 2
+
+
+def test_detect_interview_blocks_ignores_solo_monologue() -> None:
+    segments = build_transcript_timeline(
+        {
+            "segments": [
+                {"speaker": "host", "start_seconds": 0.0, "end_seconds": 60.0,
+                 "text": "All host all the time.", "words": []},
+                {"speaker": "host", "start_seconds": 60.0, "end_seconds": 120.0,
+                 "text": "Still just the host.", "words": []},
+            ]
+        }
+    )
+    blocks = _detect_interview_blocks(
+        segments.segments, min_duration_seconds=30.0, min_transitions=2
+    )
+    assert blocks == []
+
+
+def test_interview_block_gets_a_candidate_even_when_below_regular_floor() -> None:
+    """The dogfood smoking gun: an 8-min guest interview block produced
+    zero candidates because every window inside it scored below 0.35.
+    M2 + M5 fix this: the multi_speaker_score_floor (0.20) lets a
+    representative window from each block survive selection.
+
+    Construct a transcript where a multi-speaker block scores low (no
+    monologue keywords, no interview keywords, just neutral chat) and
+    verify the block still produces at least one candidate.
+    """
+    segments = build_transcript_timeline(
+        {
+            "segments": [
+                # 0-50s: high-scoring monologue with keywords (above floor)
+                {"speaker": "host", "start_seconds": 0.0, "end_seconds": 25.0,
+                 "text": "Here's the thing — this crazy insane secret will "
+                         "blow your mind.", "words": []},
+                {"speaker": "host", "start_seconds": 25.0, "end_seconds": 50.0,
+                 "text": "The truth is wild and the result is bonkers.", "words": []},
+                # 60-130s: interview block, neutral chat (below regular floor)
+                {"speaker": "guest", "start_seconds": 60.0, "end_seconds": 75.0,
+                 "text": "Hi. Good to see you. Thanks for having me on.", "words": []},
+                {"speaker": "host", "start_seconds": 75.0, "end_seconds": 90.0,
+                 "text": "Of course. Let's get into it.", "words": []},
+                {"speaker": "guest", "start_seconds": 90.0, "end_seconds": 110.0,
+                 "text": "Things have been pretty steady this year overall.", "words": []},
+                {"speaker": "host", "start_seconds": 110.0, "end_seconds": 130.0,
+                 "text": "Yeah I would agree. The vibe has been chill.", "words": []},
+            ]
+        }
+    )
+    vision_timeline = build_vision_timeline({"frames": []})
+
+    candidates = generate_candidates(
+        segments,
+        vision_timeline,
+        max_candidates=10,
+        # Use the regular floor (0.35) — no min_candidates backfill.
+        # The interview block must surface via M2/M5, not via backfill.
+        config=MiningConfig(min_candidates=0),
+    )
+
+    # At least one candidate must overlap the interview block (60-130s).
+    interview_block_candidates = [
+        c for c in candidates
+        if c.end_seconds > 60.0 and c.start_seconds < 130.0
+    ]
+    assert len(interview_block_candidates) >= 1, (
+        "M2 representation guarantee failed: no candidate from the "
+        "interview block survived selection. This is the exact dogfood "
+        "regression we shipped M2 to fix."
+    )
+
+
+# ---------- M4: new spike categories ----------
+
+
+def test_derive_spike_categories_emits_expert_endorsement_on_high_interview_keyword() -> None:
+    signals = WindowSignals(
+        hook=0.0, keyword=0.0, numeric=0.0, interjection=0.0,
+        payoff=0.0, question_to_answer=0.0, motion=0.0,
+        shot_change=0.0, face_presence=0.0,
+        speaker_interaction=0.5,
+        delivery_variance=0.0,
+        interview_keyword=0.5,  # strong endorsement signal
+        buried_lead=False, dangling_question=False, rambling_middle=False,
+    )
+    categories = derive_spike_categories(signals)
+    assert "expert_endorsement" in categories
+
+
+def test_derive_spike_categories_emits_specific_pick_when_numeric_and_interview_keyword_coincide() -> None:
+    signals = WindowSignals(
+        hook=0.0, keyword=0.0, numeric=0.3, interjection=0.0,
+        payoff=0.0, question_to_answer=0.0, motion=0.0,
+        shot_change=0.0, face_presence=0.0,
+        speaker_interaction=0.4,
+        delivery_variance=0.0,
+        interview_keyword=0.2,
+        buried_lead=False, dangling_question=False, rambling_middle=False,
+    )
+    categories = derive_spike_categories(signals)
+    assert "specific_pick" in categories
+
+
+def test_derive_spike_categories_emits_big_number_on_high_numeric_density() -> None:
+    """The dogfood video's clip-003 led with '$100B in a day' but
+    big_number never fired because the rubric didn't have it. Now it
+    fires on raw numeric density independent of speaker mix — concrete
+    quantitative hooks are clip-worthy in any context."""
+    signals = WindowSignals(
+        hook=0.0, keyword=0.0, numeric=0.6, interjection=0.0,
+        payoff=0.0, question_to_answer=0.0, motion=0.0,
+        shot_change=0.0, face_presence=0.0,
+        speaker_interaction=0.0, delivery_variance=0.0,
+        interview_keyword=0.0,
+        buried_lead=False, dangling_question=False, rambling_middle=False,
+    )
+    categories = derive_spike_categories(signals)
+    assert "big_number" in categories
+
+
+# ---------- M5: multi-speaker score floor ----------
+
+
+def test_mining_config_exposes_multi_speaker_score_floor_below_regular_floor() -> None:
+    """Sanity check the relaxed floor is actually relaxed. If a future
+    edit accidentally sets them equal or inverts them, the M2
+    representation guarantee silently stops doing its job."""
+    cfg = MiningConfig()
+    assert cfg.multi_speaker_score_floor < cfg.score_floor
+    assert cfg.multi_speaker_score_floor >= 0.0

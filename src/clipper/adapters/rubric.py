@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-RUBRIC_VERSION = "1.0.0"
+RUBRIC_VERSION = "1.1.0"
 
 RUBRIC_PROMPT = """\
 You are scoring short video clips pulled from a longer recording. Each clip in
@@ -35,6 +35,15 @@ Be honest and granular. Do not default to 0.5. Use the full range.
 - action: physical action, visible event, strong reaction shots.
 - unusually_useful_claim: a novel, crisp, actionable insight or framework —
   something a viewer could apply.
+- expert_endorsement: a credible guest or expert names a specific person,
+  company, asset, or strategy as exceptional ("hands down the best",
+  "one of the smartest people I know"). Multi-speaker context expected.
+- specific_pick: a guest or host calls out a specific stock, ticker, asset,
+  or trade — usually with a position word ("I'm long $X", "the play here is",
+  "my biggest position"). Common in finance / podcast verticals.
+- big_number: the clip leads on or pivots around a striking quantitative
+  claim ("$100B in a day", "lost 80% in two weeks", "10x in three months").
+  Concrete numbers that read at-a-glance, not vague magnitudes.
 
 Do not invent new categories. Only use categories listed above.
 
@@ -151,6 +160,9 @@ def build_response_schema() -> dict:
                                     "absurdity",
                                     "action",
                                     "unusually_useful_claim",
+                                    "expert_endorsement",
+                                    "specific_pick",
+                                    "big_number",
                                 ],
                             },
                         },
