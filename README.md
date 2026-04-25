@@ -17,11 +17,11 @@ Designed Hermes-first. Works anywhere.
 
 ## Install
 
-Shortest path:
-
 > **Heads up:** first `/clip` run downloads ~3.5 GB of model weights and
 > the pipeline is compute-heavy. Read [Hardware requirements](#hardware-requirements)
 > before installing — 16 GB RAM is the practical floor.
+
+Shortest path:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dylan-buck/clipping-tool/main/install.sh | bash
@@ -41,8 +41,8 @@ Code, and Codex skill directories. Tune it with environment variables, e.g.
 | **Any harness**    | Clone the repo, export `CLIPPER_ROOT=/abs/path/to/clipping-tool`, run the scripts   | `hermes_clip.py advance --source ...`    |
 
 All four install paths resolve to the same `SKILL.md` and the same helper
-scripts. The one-liner also does the local engine setup; manual installs can
-use the per-harness steps below and then the [local dev setup](#local-dev-setup).
+scripts. The one-liner does the local engine setup; manual installs can use
+the per-harness steps below and then the [local dev setup](#local-dev-setup).
 
 ### Hermes
 
@@ -59,7 +59,7 @@ the installed skill directory. Typical flow:
 ```text
 /clip /absolute/path/video.mp4
 /clip https://cdn.discordapp.com/attachments/... --ratios 9:16,1:1 --clips 2
-/clip config --output-dir ~/Documents/ClipperTool --hf-token hf_...
+/clip config --output-dir ~/Documents/ClipperTool
 /clip package
 ```
 
@@ -80,7 +80,7 @@ slash commands via the `commands/*.md` shims:
 
 ```text
 /clip /absolute/path/video.mp4
-/clip-config --output-dir ~/Documents/ClipperTool --hf-token hf_...
+/clip-config --output-dir ~/Documents/ClipperTool
 /clip-package
 ```
 
@@ -114,10 +114,10 @@ Then drive the pipeline with `hermes_clip.py`:
   advance --source /absolute/path/video.mp4
 ```
 
-The script prints structured JSON with a `next_action`: `score`, `package`,
-`done-renders`, `done-package`, `error`, or `configure`. Your harness reads
-the JSON, writes the scoring/packaging response when prompted, then calls
-`advance --workspace "$WORKSPACE"` again to continue.
+The script prints structured JSON with a `next_action`: `brief`, `score`,
+`package`, `done-renders`, `done-package`, `error`, or `configure`. Your
+harness reads the JSON, writes the requested response file when prompted,
+then calls `advance --workspace "$WORKSPACE"` again to continue.
 
 ## Hardware requirements
 
@@ -160,232 +160,27 @@ take 30–45 min total.
 Source videos are auto-capped to 1080p before transcription, so 4K @ 60 fps
 inputs do not blow up memory — only duration scales peak RAM.
 
-## What it does
+## Demo (5-minute flow)
 
-One concrete example. You have a 45-minute podcast recording. In your agent:
+Pick any known-good local video 5–10 minutes long.
 
-```text
-/clip ~/Downloads/podcast.mp3.mp4 --ratios 9:16
-```
-
-The skill:
-
-1. Transcribes + diarizes locally (WhisperX + pyannote).
-2. Analyzes vision: scene cuts, face positions, optical-flow motion.
-3. Mines 12 candidate 20–60 second windows with strong hooks, payoffs, and
-   spike signals (controversy, emotional beat, unusually useful claim, etc.).
-4. Asks your agent's active model to score each candidate against a fixed
-   rubric (hook, shareability, standalone clarity, payoff, delivery energy,
-   quotability) plus creator-profile cues from past runs.
-5. Auto-approves at least the top 5 candidates when the video has enough
-   valid windows, filling below the quality threshold only when needed to
-   satisfy the minimum.
-6. Virtual-camera-crops each approved clip to 9:16, burns ASS captions in
-   the configured preset, renders an H.264/AAC mp4.
-7. Returns the workspace path and mp4 paths to your agent.
-
-Optionally follow up with `/clip package` to generate title candidates,
-thumbnail overlay lines, social captions, hashtags, and opening-line hooks
-for every rendered clip.
-
-## What makes it unique
-
-- **Harness-agnostic.** The clipper never calls an LLM directly — it hands
-  every semantic decision to whatever model your agent is running. Same
-  engine, any provider.
-- **Chat-native.** Drop a video in Hermes Discord or Telegram, get back
-  finished mp4s in the same thread. Discord CDN and Telegram bot-file URLs
-  are detected automatically.
-- **Self-improving creator profile.** After each run, record which clips you
-  posted vs. skipped (`/clip feedback` or programmatically via
-  `hermes_clip.py feedback`). The skill aggregates patterns across runs
-  (length bias, spike-category preference, ratio preference, score
-  disagreement) with confidence tiers and surfaces them to the next scoring
-  handoff. Rules can be promoted into the harness's memory.
-- **Local-first, zero-config.** Transcription, diarization, vision, and
-  rendering all run on your machine with no API keys, no HuggingFace
-  token, and no license click-throughs. Default speaker diarization uses
-  silero-VAD + SpeechBrain ECAPA-TDNN (Apache 2.0 / CC-BY-4.0, public
-  weights). The pyannote 3.1 upgrade stays available as an opt-in for
-  users who already have an HF token.
-- **Deterministic engine, judgement delegated.** The clipper validates every
-  handoff against a strict JSON schema with `clip_id`/`clip_hash` integrity
-  checks, so model outputs can't silently corrupt a run.
-
-## How it works
-
-The pipeline is a three-stage state machine: `mine` → `review` → `render`.
-Each stage writes a JSON artifact in the workspace. Scoring and packaging
-are model handoffs: the engine writes a request JSON, the agent writes a
-response JSON, the engine validates and continues.
-
-```text
-/clip video.mp4
-    │
-    ├─→ mine       → scoring-request.json
-    │               (agent scores → scoring-response.json)
-    ├─→ review     → review-manifest.json (auto-approves top N)
-    ├─→ render     → render-report.json + renders/<clip>/<clip>-{9x16,1x1,16x9}.mp4
-    │
-    └─ /clip package
-        ├─→ package-prompt → package-request.json
-        │                    (agent packages → package-response.json)
-        └─→ package-save    → renders/<clip>/package.json
-                              + package-report.json
-```
-
-The full skill flow, including creator-profile memory, feedback loop, and
-raw-primitive fallback, is in [SKILL.md](SKILL.md).
-
-## Local dev setup
-
-Requirements:
-
-- Python 3.12
-- FFmpeg and `ffprobe` on your `PATH`
-
-Install the project and dev tools:
-
-```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-To run the real transcription + diarization pipeline, also install the engine extras:
-
-```bash
-pip install -e ".[engine,dev]"
-```
-
-The engine extras pull in:
-
-- `whisperx` — large-v3 ASR + wav2vec2 forced alignment
-- `pyannote.audio` — `speaker-diarization-3.1`
-- `opencv-python` — frame sampling and colour-space conversion
-- `scenedetect` — `ContentDetector` for shot-change detection
-- `retina-face` + `tf-keras` — RetinaFace-ResNet50 for framing anchors
-  (MIT; pulls TensorFlow as a dep — model weights are ~119 MB on first run)
-- `torch` + `torchvision` — RAFT optical flow for motion scoring
-  (auto-selects `mps` / `cuda` / `cpu`)
-- `speechbrain` + `silero-vad` + `scikit-learn` — open-source speaker
-  diarization (silero-VAD → ECAPA-TDNN embeddings → spectral clustering).
-  Public weights, no token, no license click-through.
-
-### Diarization (zero-config)
-
-Diarization runs out of the box. The default stack uses silero-VAD plus
-SpeechBrain's `speechbrain/spkrec-ecapa-voxceleb` ECAPA-TDNN model — both
-are public, both auto-cache locally on first use, neither requires a
-HuggingFace token.
-
-If you want the higher-quality `pyannote/speaker-diarization-3.1` upgrade,
-opt in with `CLIPPER_DIARIZER=pyannote`. That path requires a one-time
-HuggingFace setup:
-
-1. Create a token at <https://huggingface.co/settings/tokens>.
-2. Accept the license for `pyannote/speaker-diarization-3.1` at
-   <https://hf.co/pyannote/speaker-diarization-3.1>.
-3. Export the token before running a job:
-
-   ```bash
-   export HF_TOKEN=hf_...
-   export CLIPPER_DIARIZER=pyannote
-   ```
-
-   `HUGGING_FACE_HUB_TOKEN` and `HUGGINGFACE_HUB_TOKEN` are also accepted
-   for the token. `CLIPPER_DIARIZER=off` skips diarization entirely.
-
-Run the checks used in local development:
-
-```bash
-ruff check .
-.venv/bin/pytest -v
-```
-
-Run the gated real-video E2E check when you want to validate the production
-path on an actual file:
-
-```bash
-pip install -e ".[engine,dev]"
-export CLIPPER_E2E_VIDEO=/absolute/path/to/5-10-minute-video.mp4
-.venv/bin/pytest -m e2e -v
-```
-
-That test runs real probe, WhisperX transcription, the open-source
-diarizer, RetinaFace-ResNet50 face detection, RAFT optical flow, JSON
-scoring handoff, approval, and FFmpeg rendering. It skips cleanly unless
-`CLIPPER_E2E_VIDEO`, FFmpeg/ffprobe, and engine dependencies are
-available. To exercise the pyannote path instead, also set `HF_TOKEN`
-plus `CLIPPER_DIARIZER=pyannote`.
-
-## CLI Flow
-
-The CLI currently exposes two commands:
-
-- `python -m clipper.cli version`
-- `python -m clipper.cli run /absolute/path/job.json [--stage mine|review|render|auto]`
-
-`run` reads a job file, validates it against the shared `ClipperJob` contract, and executes the requested pipeline stage. `--stage` defaults to `auto`.
-
-Minimal job file:
-
-```json
-{
-  "video_path": "/absolute/path/input.mp4",
-  "output_dir": "/absolute/path/output"
-}
-```
-
-### Stages
-
-- `mine` — ingest + transcribe + vision + mining, then writes
-  `scoring-request.json` and prints its path.
-- `review` — consumes an existing `scoring-request.json` plus a matching
-  `scoring-response.json` (or cached scores) and writes `review-manifest.json`.
-- `render` — consumes `review-manifest.json`, builds per-clip `RenderManifest`
-  plans for candidates marked `"approved": true`, and shells out to FFmpeg to
-  produce 9:16 / 1:1 / 16:9 MP4s with ASS caption sidecars. Emits
-  `render-report.json`; exits with an error when no candidates are approved.
-- `auto` — runs `mine`, and if the harness has already written the response
-  file, continues into `review` in the same invocation. `auto` does not chain
-  into render; the render stage must be invoked explicitly after approval.
-
-All workspace artifacts land under `/absolute/path/output/jobs/<job_id>/`:
-
-```text
-jobs/<job_id>/scoring-request.json
-jobs/<job_id>/scoring-response.json         # produced by the harness
-jobs/<job_id>/scoring-cache/<hash>.json     # per-clip cache
-jobs/<job_id>/review-manifest.json
-jobs/<job_id>/renders/<clip_id>/render-manifest.json
-jobs/<job_id>/renders/<clip_id>/<clip_id>-9x16.mp4
-jobs/<job_id>/renders/<clip_id>/<clip_id>-1x1.mp4
-jobs/<job_id>/renders/<clip_id>/<clip_id>-16x9.mp4
-jobs/<job_id>/renders/<clip_id>/<clip_id>-*.ass
-jobs/<job_id>/render-report.json
-```
-
-### Harness workflow
-
-Scoring is delegated to the surrounding agent harness; the clipper never calls
-an LLM API directly and does not use any provider SDK or API key.
-
-1. Run `python -m clipper.cli run job.json --stage mine` to emit
-   `scoring-request.json`. The request embeds the rubric prompt, versioned
-   rubric id, and the strict JSON schema the response must satisfy.
-2. The harness (Claude Code, Codex, or Hermes Agent) loads the request via its
-   wrapper helper (e.g. `claude_load_scoring_request`), scores every clip with
-   the in-session model, and writes `scoring-response.json` back through
-   `claude_write_scoring_response` (or the `codex_*`/`hermes_*` equivalents).
-3. Run `python -m clipper.cli run job.json --stage review` (or rerun `auto`)
-   to merge scores into `review-manifest.json`.
-4. Review `review-manifest.json` and set `"approved": true` on the candidates
-   to export.
-5. Run `python -m clipper.cli run job.json --stage render` to produce final
-   MP4s for approved candidates only.
-
-See [docs/architecture/scoring-handoff.md](docs/architecture/scoring-handoff.md) for the full rubric, schema, and caching rules.
+1. **Install.** `curl -fsSL https://raw.githubusercontent.com/dylan-buck/clipping-tool/main/install.sh | bash`.
+2. **Configure** (optional). In your agent, run `/clip config --output-dir
+   ~/Documents/ClipperTool` (Hermes) or `/clip-config ...` (Claude Code /
+   Codex). Writes the `.env`. **No HuggingFace token needed** —
+   diarization uses the open-source SpeechBrain stack by default.
+3. **Clip.** Run `/clip ~/Downloads/sample-talk.mp4 --ratios 9:16,1:1`.
+   The skill mines candidates locally, the agent first authors a video
+   brief from the transcript (one model handoff), then scores each
+   candidate, the skill auto-approves the top 5 + renders, and the
+   agent reports back the workspace, clips directory, and MP4 paths.
+4. **Package.** Run `/clip package`. Produces per-clip `package.json`
+   with titles, thumbnail overlay lines, social caption, hashtags, and
+   opening-line hooks.
+5. **Learn.** Tell the agent which clips you actually posted:
+   `hermes_clip.py feedback <workspace> --kept c1 --skipped c2 --note
+   c2='too long'`. The next `/clip` run will surface patterns in the
+   scoring handoff.
 
 ## Configuration
 
@@ -403,73 +198,289 @@ through the skill rather than hand-editing:
 Supported keys (all optional):
 
 ```env
-CLIPPER_OUTPUT_DIR=~/Documents/ClipperTool
-CLIPPER_RATIOS=9:16,1:1,16:9
-CLIPPER_MAX_CANDIDATES=12
-CLIPPER_APPROVE_TOP=5
-CLIPPER_MIN_SCORE=0.70
-# Optional. Default diarizer is the open-source SpeechBrain stack (no token).
+CLIPPER_OUTPUT_DIR=~/Documents/ClipperTool   # where MP4s land
+CLIPPER_RATIOS=9:16,1:1,16:9                 # default render set
+CLIPPER_MAX_CANDIDATES=12                    # mining cap per video
+CLIPPER_APPROVE_TOP=5                        # auto-approve top N scores
+CLIPPER_MIN_SCORE=0.70                       # threshold for top-N selection
+
+# Optional. Default diarizer is open-source SpeechBrain (no token needed).
 # Set CLIPPER_DIARIZER=pyannote and HF_TOKEN to opt into the pyannote upgrade.
 CLIPPER_DIARIZER=speechbrain
 HF_TOKEN=hf_...
 ```
 
+Per-job knobs (passed at invocation, not persisted):
+
+- `--ratios 9:16,1:1` — render only the listed ratios
+- `--clips 3` — auto-approve the top N (overrides `CLIPPER_APPROVE_TOP`)
+- `--min-score 0.6` — lower the auto-approve threshold for this run
+- `--max-candidates 8` — cap mining for this run
+
 The skill renders all three ratios by default because rendering is
 deterministic and does not use the agent's model. Narrow the set with
 `--ratios` only when the user explicitly asks.
 
-## Demo (two-minute flow)
+## Output locations
 
-Pick any known-good local video 5–10 minutes long.
+By default, all artifacts land under `~/Documents/ClipperTool/jobs/<job_id>/`.
+Override with `--output-dir` at job time or set `CLIPPER_OUTPUT_DIR` in
+your config. The `<job_id>` is a SHA-1 of the source video path —
+re-running on the same path reuses the same workspace and skips
+already-cached stages.
 
-1. **Install.** `curl -fsSL https://raw.githubusercontent.com/dylan-buck/clipping-tool/main/install.sh | bash`.
-2. **Configure.** In your agent, run `/clip config --output-dir
-   ~/Documents/ClipperTool` (Hermes) or `/clip-config ...` (Claude Code /
-   Codex). Writes the `.env`. **No HuggingFace token needed** — diarization
-   uses the open-source SpeechBrain stack by default.
-3. **Clip.** Run `/clip ~/Downloads/sample-talk.mp4 --ratios 9:16,1:1`.
-   The agent scores each candidate with its active model, the skill
-   auto-approves the top 5 and renders them, and the agent reports back
-   the workspace, clips directory, and MP4 paths.
-4. **Package.** Run `/clip package`. Produces per-clip `package.json`
-   with titles, thumbnail overlay lines, social caption, hashtags, and
-   opening-line hooks.
-5. **Learn.** Tell the agent which clips you actually posted:
-   `hermes_clip.py feedback <workspace> --kept c1 --skipped c2 --note
-   c2='too long'`. The next `/clip` run will surface patterns in the
-   scoring handoff.
+Per-job workspace layout:
 
-## Current v1 Limitations
+```text
+~/Documents/ClipperTool/jobs/<job_id>/
+├── transcript.json              # WhisperX output (cached)
+├── vision.json                  # face / motion / scene-cut signals (cached)
+├── brief-request.json           # ← engine writes; harness authors brief
+├── brief-response.json          # ← harness writes
+├── brief-cache.json             # last good brief, survives reruns
+├── scoring-request.json         # ← engine writes; harness scores each clip
+├── scoring-response.json        # ← harness writes
+├── scoring-cache/<hash>.json    # per-clip score cache, keyed by brief context
+├── review-manifest.json         # auto-approved candidates
+├── render-report.json           # final summary with output paths
+└── renders/<clip_id>/
+    ├── <clip_id>-9x16.mp4       # final MP4s for each requested ratio
+    ├── <clip_id>-1x1.mp4
+    ├── <clip_id>-16x9.mp4
+    ├── <clip_id>-*.ass          # ASS subtitle sidecars
+    ├── render-manifest.json
+    └── package.json             # /clip-package output (titles, hashtags, etc.)
+```
 
-- Transcription + diarization (WhisperX + pyannote) are wired and cached at
-  `<workspace>/transcript.json`, keyed by model name.
-- Vision analysis (OpenCV frame sampling, PySceneDetect shot changes,
-  RetinaFace-ResNet50 face detection via `retina-face`, torchvision RAFT
-  optical flow, OneEuro trajectory smoothing) is wired and cached at
-  `<workspace>/vision.json`, keyed by adapter model. The sampler grabs past
-  unsampled frames instead of decoding every frame, keeps face frames capped
-  at 960px wide, and keeps motion frames at 256px wide. RAFT auto-selects
-  the best available PyTorch device (`mps` / `cuda` / `cpu`).
-- Scoring runs only when the surrounding harness writes a valid
-  `scoring-response.json`; the clipper itself does not invoke any LLM.
-- The render stage requires `ffmpeg` on your `PATH` (libx264 + AAC + libass /
-  `ass` filter for caption burn-in). The render
-  manifest carries a per-clip `mode` (`TRACK` or `GENERAL`) derived from the
-  vision timeline. `TRACK` builds a virtual-camera crop that holds inside a
-  safe zone and pans at a bounded rate (piecewise-linear ffmpeg crop
-  expression, snap on shot change). `GENERAL` runs a blurred-background
-  composition for clips with no clear single subject.
-- Caption styling is preset-driven via `output_profile.caption_preset`
-  (`hook-default` / `bottom-creator` / `bottom-compact` / `lower-third-clean`
-  / `center-punch` / `top-clean`). Each preset resolves to a `CaptionStyle`
-  (alignment, bold, font/margin ratios, outline, shadow) in
-  `pipeline/caption_styles.py` and drives the ASS Style line emitted by the
-  renderer.
-- `auto` does not run the render stage; invoke `--stage render` explicitly to
-  produce final MP4s after marking candidates approved in `review-manifest.json`.
-- Packaging (titles, thumbnail overlay lines, social caption, hashtags, hooks)
-  is a separate post-render step driven by `/clip-package` — it reuses the
-  scoring-style request/response handoff so the harness model authors the pack
-  and the clipper validates + persists per-clip `package.json` artifacts next
-  to each rendered MP4. See
-  [docs/architecture/package-handoff.md](docs/architecture/package-handoff.md).
+The MP4s are what you upload. The JSON files are the workspace's audit
+trail — they let you re-run any stage without re-mining and they're how
+the harness model picks up where it left off across `/clip` invocations.
+
+## What it does
+
+One concrete example. You have a 45-minute podcast recording. In your agent:
+
+```text
+/clip ~/Downloads/podcast.mp3.mp4 --ratios 9:16
+```
+
+The skill:
+
+1. Transcribes locally with WhisperX large-v3, then diarizes with the
+   zero-config SpeechBrain ECAPA + silero-VAD stack (no HF token).
+2. Analyzes vision: scene cuts (PySceneDetect), face positions
+   (RetinaFace-ResNet50), optical-flow motion (RAFT).
+3. Mines 12 candidate 20–60s windows with strong hooks, payoffs, and
+   spike signals (controversy, big-number, expert-endorsement, etc.),
+   plus an explicit guarantee that detected multi-speaker / interview
+   blocks each get at least one candidate even when their windows score
+   below the regular floor.
+4. Asks the agent's active model to author a one-paragraph **video brief**
+   — theme, expected viral patterns, anti-patterns — from the full
+   transcript. One model handoff per video; cached for the rest of the
+   workspace's life.
+5. Asks the model to score every candidate against a fixed rubric (hook,
+   shareability, standalone clarity, payoff, delivery energy,
+   quotability) plus the brief-derived bias and creator-profile cues
+   from past runs.
+6. Auto-approves at least the top 5 candidates when the video has enough
+   valid windows, filling below the quality threshold only when needed
+   to satisfy the minimum.
+7. Virtual-camera-crops each approved clip to 9:16, burns ASS captions in
+   the configured preset, renders an H.264/AAC mp4.
+8. Returns the workspace path and mp4 paths to your agent.
+
+Optionally follow up with `/clip package` to generate title candidates,
+thumbnail overlay lines, social captions, hashtags, and opening-line hooks
+for every rendered clip.
+
+## What makes it unique
+
+- **Harness-agnostic.** The clipper never calls an LLM directly — it hands
+  every semantic decision to whatever model your agent is running. Same
+  engine, any provider.
+- **Chat-native.** Drop a video in Hermes Discord or Telegram, get back
+  finished mp4s in the same thread. Discord CDN and Telegram bot-file URLs
+  are detected automatically.
+- **Self-improving creator profile.** After each run, record which clips
+  you posted vs. skipped (`/clip feedback` or programmatically via
+  `hermes_clip.py feedback`). The skill aggregates patterns across runs
+  (length bias, spike-category preference, ratio preference, score
+  disagreement) with confidence tiers and surfaces them to the next
+  scoring handoff. Rules can be promoted into the harness's memory.
+- **Local-first, zero-config.** Transcription, diarization, vision, and
+  rendering all run on your machine with no API keys, no HuggingFace
+  token, and no license click-throughs. Default speaker diarization uses
+  silero-VAD + SpeechBrain ECAPA-TDNN (Apache 2.0 / CC-BY-4.0, public
+  weights). The pyannote 4.x upgrade stays available as an opt-in for
+  users who already have an HF token.
+- **Video-brief context.** Before per-clip scoring, the model reads the
+  full transcript and authors an opinionated frame: theme, expected
+  viral patterns, anti-patterns. Per-clip scoring then sees the global
+  shape of the video — not just one clip in isolation. Cached per
+  workspace so re-running scoring doesn't re-pay the brief cost.
+- **Deterministic engine, judgement delegated.** The clipper validates
+  every handoff against a strict JSON schema with `clip_id`/`clip_hash`
+  integrity checks (the clip hash now folds in the brief context too,
+  so brief edits invalidate the relevant cached scores), so model
+  outputs can't silently corrupt a run.
+
+## How it works
+
+The pipeline is a state machine. Each stage writes a JSON artifact in
+the workspace; deterministic stages run automatically, model-handoff
+stages pause for a response file:
+
+```text
+/clip video.mp4
+    │
+    ├─→ mine        → scoring-request.json + brief-request.json
+    │                 (transcribes, diarizes, analyzes vision, mines candidates)
+    ├─→ brief       (agent authors → brief-response.json)
+    │                 ↳ engine embeds brief into scoring-request.json
+    ├─→ score       (agent scores → scoring-response.json)
+    ├─→ review      → review-manifest.json (auto-approves top N)
+    ├─→ render      → render-report.json + renders/<clip>/<clip>-{9x16,1x1,16x9}.mp4
+    │
+    └─ /clip package
+        ├─→ package-prompt → package-request.json (with brief embedded)
+        │                    (agent packages → package-response.json)
+        └─→ package-save    → renders/<clip>/package.json
+                              + package-report.json
+```
+
+The full skill flow, including creator-profile memory, the brief
+handoff contract, and feedback loop, is in [SKILL.md](SKILL.md).
+
+## Local dev setup
+
+Requirements:
+
+- Python 3.12 (TensorFlow wheels cap at 3.12; pyproject pins `<3.13`)
+- FFmpeg and `ffprobe` on your `PATH`, OR engine extras installed
+  (the vendored `static-ffmpeg` is auto-used as a fallback)
+
+Install the project and dev tools:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+To run the real transcription + diarization pipeline, also install the
+engine extras:
+
+```bash
+pip install -e ".[engine,dev]"
+```
+
+Or, with `uv` (catches resolver-strict pin issues that pip silently
+ignores — recommended for fresh installs):
+
+```bash
+uv sync --extra engine --extra dev
+```
+
+Run the checks used in local development:
+
+```bash
+ruff check .
+.venv/bin/pytest -v
+```
+
+Run the gated real-video E2E check when you want to validate the
+production path on an actual file:
+
+```bash
+export CLIPPER_E2E_VIDEO=/absolute/path/to/5-10-minute-video.mp4
+.venv/bin/pytest -m e2e -v
+```
+
+## CLI Flow (advanced)
+
+For non-harness use, drive the pipeline directly with the CLI:
+
+- `python -m clipper.cli version`
+- `python -m clipper.cli run /absolute/path/job.json [--stage mine|brief|review|render|auto]`
+
+`run` reads a job file, validates it against the shared `ClipperJob`
+contract, and executes the requested pipeline stage. `--stage` defaults
+to `auto`.
+
+Minimal job file:
+
+```json
+{
+  "video_path": "/absolute/path/input.mp4",
+  "output_dir": "/absolute/path/output"
+}
+```
+
+### Stages
+
+- `mine` — ingest + transcribe + vision + mining, then writes
+  `scoring-request.json` (and `brief-request.json` if `video_brief` is
+  enabled in the job's `output_profile`).
+- `brief` — re-writes `scoring-request.json` with the resolved video
+  brief embedded. Requires `brief-response.json` (or a cached brief).
+- `review` — consumes an existing `scoring-request.json` plus a matching
+  `scoring-response.json` (or cached scores) and writes
+  `review-manifest.json`.
+- `render` — consumes `review-manifest.json`, builds per-clip
+  `RenderManifest` plans for candidates marked `"approved": true`, and
+  shells out to FFmpeg to produce the configured ratios + ASS caption
+  sidecars. Emits `render-report.json`; exits with an error when no
+  candidates are approved.
+- `auto` — runs `mine`, then `brief` (when enabled and the response is
+  available), then `review`. **Does not chain into render** — that
+  must be invoked explicitly. The Hermes `/clip` flow handles
+  approve + render automatically; the raw CLI stops at review by
+  design.
+
+See [docs/architecture/scoring-handoff.md](docs/architecture/scoring-handoff.md)
+for the full rubric, schema, and caching rules.
+
+## Current v1 limitations
+
+- **`--stage auto` does not chain into render.** The CLI's `auto` stage
+  runs mine → brief → score → review and stops; render must be invoked
+  explicitly. The Hermes `/clip` flow auto-approves + renders past
+  review automatically, but raw-CLI users need an extra step.
+- **Auto-approval is the default in the agent flow.** The `/clip` skill
+  auto-approves the top N scoring candidates above `min_score`, with
+  backfill from below-threshold windows when fewer than N qualify.
+  There's no required human-review pause in the agent loop. To gate on
+  manual review, drive the raw CLI directly: `--stage review`, edit
+  `review-manifest.json` to flip `"approved": true` on the candidates
+  you want, then `--stage render`.
+- **Linux and Windows install paths are not dogfood-verified.** The
+  pin set is resolver-clean on macOS arm64 (verified under both pip
+  and `uv sync`) but neither install.sh nor the engine extras have been
+  cold-installed on Linux x86_64 or Windows. Both should work — TF
+  and torch wheels exist for both — but verification is pending. See
+  [docs/pre-ship-fixes.md](docs/pre-ship-fixes.md).
+- **NVIDIA / CUDA wheels require manual install on Linux.** install.sh
+  pulls the CPU `torch==2.8.0` wheel by default. Linux users with
+  NVIDIA GPUs need to install the CUDA-suffixed wheel manually
+  (e.g. `pip install torch==2.8.0+cu124 --index-url
+  https://download.pytorch.org/whl/cu124`). install.sh does not
+  auto-detect CUDA.
+- **Mining heuristics are English-tuned.** Both monologue keyword
+  buckets (controversy, taboo, etc.) and interview keyword buckets
+  ("hands down", "I'm long", etc.) are English-only. WhisperX
+  large-v3 transcribes other languages, but the candidate miner will
+  surface poor windows for non-English content. The harness model's
+  brief + scoring can partially compensate, but the heuristics
+  themselves are English-first.
+- **Job IDs are path-hashed, single source per workspace.** A workspace
+  is identified by SHA-1 of the source video path. Re-running on the
+  same path reuses the same workspace (good for resume). If you edit
+  the source video at the same path, manually delete the workspace
+  under `<output_dir>/jobs/<job_id>/` to force a fresh mine. There's
+  no batch mode — invoke `/clip` (or `hermes_clip.py advance --source
+  ...`) in a loop for multiple videos.
+- **Brief stage adds one model handoff per video.** Disable via
+  `output_profile.video_brief: false` in the job for the legacy
+  single-handoff flow. The brief is cached per workspace, so the cost
+  is paid once per video, not once per scoring run.
