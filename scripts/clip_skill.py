@@ -786,12 +786,35 @@ def download_video_url(source: str, download_dir: Path) -> Path:
         # the signature and the expected mp4 payload.
         return download_direct_url(source, download_dir)
     if shutil.which("yt-dlp"):
-        before = set(download_dir.iterdir())
-        subprocess.run(
+        # `--print after_move:filepath` makes yt-dlp emit exactly one line on
+        # stdout: the absolute path to the downloaded (or already-cached)
+        # file, after any post-processing/move. This is the only reliable
+        # way to get the destination path — relying on diffing the directory
+        # before/after fails when yt-dlp short-circuits with "already
+        # downloaded" and produces no new file.
+        # Progress, warnings, and extraction logs all go to stderr (yt-dlp
+        # default), so the user still sees download progress without
+        # polluting our stdout, which carries the JSON the Hermes driver
+        # parses.
+        completed = subprocess.run(
             [
                 "yt-dlp",
+                "--no-progress",
+                "--no-warnings",
+                "--print",
+                "after_move:filepath",
+                # Cap at 1080p height. The clip pipeline never renders above
+                # 1080×1920, the vision adapter samples at 2 fps, and
+                # WhisperX downsamples to 16 kHz mono regardless. Pulling
+                # the YouTube "best" stream gets you 4K@60 for ~2 GB on a
+                # 30-minute video, which OOMs WhisperX on a 16 GB Mac
+                # without buying us a single useful pixel.
+                # We don't cap fps because many channels only publish their
+                # 1080p stream at 60 fps; capping fps would silently drop
+                # us to 480p. The fps difference is harmless — vision
+                # samples at 2 fps and ffmpeg downsamples on render.
                 "-f",
-                "bv*+ba/b",
+                "bv*[height<=1080]+ba/b[height<=1080]/b",
                 "--merge-output-format",
                 "mp4",
                 "-o",
@@ -799,10 +822,18 @@ def download_video_url(source: str, download_dir: Path) -> Path:
                 source,
             ],
             check=True,
+            capture_output=True,
+            text=True,
         )
-        after = [path for path in download_dir.iterdir() if path not in before]
-        if after:
-            return max(after, key=lambda path: path.stat().st_mtime).resolve()
+        # yt-dlp's stderr (info lines like "[youtube] Downloading webpage")
+        # is informational; surface it on stderr so the user can see what
+        # happened, without leaking onto stdout.
+        if completed.stderr:
+            print(completed.stderr, file=sys.stderr, end="")
+        for line in completed.stdout.splitlines():
+            candidate = Path(line.strip())
+            if candidate.is_file():
+                return candidate.resolve()
     return download_direct_url(source, download_dir)
 
 

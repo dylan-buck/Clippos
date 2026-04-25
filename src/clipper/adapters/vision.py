@@ -200,6 +200,18 @@ def _detect_shot_changes(video_path: Path, *, threshold: float) -> list[float]:
 def _detect_faces_per_frame(
     samples: list[FrameSample], *, min_confidence: float
 ) -> list[RawFace | None]:
+    # RetinaFace is built on Keras 2's functional API. TensorFlow 2.16+
+    # ships Keras 3 by default, which is API-incompatible — without this
+    # opt-in, RetinaFace.build_model() raises:
+    #   ValueError: A KerasTensor cannot be used as input to a TensorFlow
+    #   function. ...
+    # The `tf-keras` package (in our engine extras) provides the legacy
+    # Keras 2 surface; the env var tells TF to use it. Must be set before
+    # the first `import tensorflow` anywhere in the process. Setting it
+    # here is safe because pyannote/whisperx/speechbrain don't import TF.
+    import os
+
+    os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
     import cv2
     from retinaface import RetinaFace
 

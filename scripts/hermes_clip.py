@@ -598,15 +598,41 @@ def _run_clip_skill(
 
 
 def _run_cli_stage(job_path: Path, stage: str, *, workspace: Path) -> None:
-    completed = subprocess.run(
+    """Run a clipper.cli stage with live stderr passthrough.
+
+    Mining + render take 5-30 minutes on real videos. A blanket
+    ``capture_output=True`` would swallow all of WhisperX, SpeechBrain,
+    and RAFT's progress until the very end, so users have no signal that
+    anything is happening — and silent OOM kills look identical to a
+    healthy long-running job.
+
+    We stream the child's stderr live to our own stderr so model
+    downloads, transcription progress, and crashes are all visible in
+    real time. We tail the last 60 stderr lines into a ring buffer so
+    error messages stay informative when a stage exits non-zero.
+    Stdout is discarded — the CLI prints the artifact path there but we
+    already know it from the workspace layout.
+    """
+    from collections import deque
+
+    proc = subprocess.Popen(
         [sys.executable, "-m", "clipper.cli", "run", str(job_path), "--stage", stage],
-        capture_output=True,
-        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         text=True,
+        bufsize=1,
     )
-    if completed.returncode != 0:
-        message = completed.stderr.strip() or completed.stdout.strip() or (
-            f"clipper stage {stage} exited {completed.returncode}"
+    tail: deque[str] = deque(maxlen=60)
+    assert proc.stderr is not None
+    for line in proc.stderr:
+        sys.stderr.write(line)
+        sys.stderr.flush()
+        tail.append(line)
+    proc.wait()
+    if proc.returncode != 0:
+        message = (
+            "".join(tail).strip()
+            or f"clipper stage {stage} exited {proc.returncode}"
         )
         raise HermesClipError(message, stage=stage, workspace=workspace)
 

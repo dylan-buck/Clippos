@@ -22,6 +22,63 @@ from clipper.adapters.vision import (
 from clipper.pipeline.vision import build_vision_timeline
 
 
+def test_clipper_package_sets_legacy_keras_env_at_import_time() -> None:
+    """The TF_USE_LEGACY_KERAS opt-in lives in clipper/__init__.py so it
+    runs before whisperx → pytorch-lightning eagerly imports TensorFlow
+    on the first checkpoint load. Without this, RetinaFace.build_model()
+    raises a Keras-3/TF compatibility error mid-pipeline.
+    """
+    import os
+
+    import clipper  # noqa: F401 — importing it is the point
+
+    assert os.environ.get("TF_USE_LEGACY_KERAS") == "1"
+
+
+def test_detect_faces_sets_legacy_keras_env_before_retinaface_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: RetinaFace uses Keras 2's functional API. TensorFlow
+    2.16+ defaults to Keras 3, which raises:
+        ValueError: A KerasTensor cannot be used as input to a TensorFlow
+        function.
+    The fix is TF_USE_LEGACY_KERAS=1 set BEFORE the first TF import. We
+    assert the env var is in place at the moment retinaface is imported.
+    """
+    import sys
+    import types
+
+    monkeypatch.delenv("TF_USE_LEGACY_KERAS", raising=False)
+
+    captured: dict[str, str | None] = {"env_at_import_time": "missing"}
+
+    fake_retinaface = types.ModuleType("retinaface")
+
+    class _FakeRetinaFace:
+        @staticmethod
+        def build_model():
+            captured["env_at_import_time"] = __import__("os").environ.get(
+                "TF_USE_LEGACY_KERAS"
+            )
+            return object()
+
+        @staticmethod
+        def detect_faces(*args, **kwargs):
+            return {}
+
+    fake_retinaface.RetinaFace = _FakeRetinaFace  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "retinaface", fake_retinaface)
+
+    fake_cv2 = types.ModuleType("cv2")
+    fake_cv2.cvtColor = lambda src, code: src  # type: ignore[attr-defined]
+    fake_cv2.COLOR_RGB2BGR = 4  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "cv2", fake_cv2)
+
+    vision_adapter._detect_faces_per_frame([], min_confidence=0.5)
+
+    assert captured["env_at_import_time"] == "1"
+
+
 def test_vision_config_defaults_match_quality_first_choices() -> None:
     config = VisionConfig()
 

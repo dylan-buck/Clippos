@@ -18,6 +18,67 @@ def _load_clip_skill_module():
     return module
 
 
+def test_download_video_url_uses_yt_dlp_print_to_locate_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression for two bugs:
+    1. yt-dlp's progress lines used to land on our stdout, corrupting the
+       JSON the Hermes driver tries to parse.
+    2. yt-dlp's "already downloaded" short-circuit produces no new file in
+       the download dir, so the prior diff-based detection wrongly fell
+       through to the urllib fallback (which then downloaded YouTube's
+       HTML page as ".mp4" and crashed downstream).
+
+    The fix uses `--print after_move:filepath` to get the destination path
+    directly. This test confirms we ask for it and route stderr separately
+    so user-visible progress doesn't leak onto stdout.
+    """
+    clip_skill = _load_clip_skill_module()
+    download_dir = tmp_path / "downloads"
+    download_dir.mkdir(parents=True)
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        # Simulate the cached/short-circuit case: file already exists, yt-dlp
+        # would still print the path via after_move:filepath.
+        existing = download_dir / "Already-Downloaded-abc.mp4"
+        existing.write_bytes(b"fake")
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=0,
+            stdout=f"{existing}\n",
+            stderr="[youtube] abc: Downloading webpage\n",
+        )
+
+    monkeypatch.setattr(clip_skill.subprocess, "run", fake_run)
+    monkeypatch.setattr(clip_skill.shutil, "which", lambda _binary: "/usr/local/bin/yt-dlp")
+
+    result = clip_skill.download_video_url(
+        "https://www.youtube.com/watch?v=abc",
+        download_dir,
+    )
+
+    assert result == (download_dir / "Already-Downloaded-abc.mp4").resolve()
+
+    command = captured["command"]
+    assert "--print" in command
+    assert "after_move:filepath" in command
+    # capture_output=True keeps yt-dlp's chatty stderr from polluting our
+    # stdout; we re-emit stderr explicitly so the user still sees progress.
+    assert captured["kwargs"].get("capture_output") is True
+    assert captured["kwargs"].get("text") is True
+    # Height cap: pulling YouTube's "best" stream gives you 4K@60 for
+    # huge files that OOM the transcription/vision stages on most laptops.
+    # We deliberately don't cap fps because many channels only publish
+    # 1080p at 60 fps; capping fps would silently drop us to 480p.
+    format_index = command.index("-f")
+    format_string = command[format_index + 1]
+    assert "height<=1080" in format_string
+    assert "fps<=" not in format_string
+
+
 def test_is_direct_cdn_url_matches_discord_and_telegram_hosts() -> None:
     clip_skill = _load_clip_skill_module()
 
