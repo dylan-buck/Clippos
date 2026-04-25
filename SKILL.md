@@ -17,6 +17,12 @@ Accept:
 - A local video path, including a path resolved from an attached video file.
 - A direct `http` / `https` video URL.
 - A platform video URL when `yt-dlp` is installed.
+- A messaging-platform attachment URL (Discord CDN, Telegram `api.telegram.org`
+  bot-file URL, WhatsApp/Signal-provided HTTPS URL). On Discord and Telegram,
+  when the user drops a video into the channel, the attachment appears in the
+  message as `{filename, url, size}` — pass that `url` straight into `advance
+  --source`. The helper detects CDN hosts and downloads them directly via
+  `urllib` (yt-dlp is skipped for those, since they are signed direct mp4s).
 
 Optional user intent:
 
@@ -30,131 +36,215 @@ Optional user intent:
 If no video source is present, ask one short question for the video link or
 file path.
 
-## Preflight
+## Slash-command shape
 
-Run this before the first clip job in a session. `CLIPPER_ROOT` resolves to
-`CLAUDE_PLUGIN_ROOT` when the skill is installed as a plugin, otherwise `$PWD`
-(the repo checkout). Callers can also pin `CLIPPER_ROOT` or `CLIPPER_PYTHON`
-directly:
+This skill is harness-agnostic. The surface differs per harness but the
+workflow below is the same.
+
+**Hermes** exposes a single `/clip` command and treats extra text as a
+subcommand or source argument:
+
+- `/clip <video path|url>` — run the main clipping workflow.
+- `/clip config [options]` — check or write local defaults.
+- `/clip package [workspace]` — generate publish packs after rendering.
+- `/clip status` — run the preflight config check.
+
+**Claude Code / Codex** expose three slash commands via `commands/*.md` shims:
+
+- `/clip <video path|url>` — same main workflow.
+- `/clip-config [options]` — same as `/clip config`.
+- `/clip-package [workspace]` — same as `/clip package`.
+
+When this SKILL.md says "use `/clip config`" or "use `/clip package`", Claude
+Code / Codex users substitute `/clip-config` or `/clip-package`. The
+underlying helper scripts are identical across harnesses.
+
+## Creator Profile (harness memory)
+
+The skill is memory-aware. Whenever the harness has persistent memory
+(Hermes memory, Claude Code `CLAUDE.md` + `~/.claude` memories, Codex
+equivalents), check it for creator-profile facts and apply them at the
+scoring and packaging handoffs. Creator-profile facts are the kind a content
+creator would tell the agent once and expect respected every run:
+
+- Target platform and format (e.g. "TikTok-first, 9:16, 15–45s clips").
+- Clip style (e.g. "story-beat > one-liner", "never pick intro music").
+- Caption style (e.g. "clean, punchy, no fake hype, no all-caps").
+- Brand tone (e.g. "indie-founder, self-deprecating, technical specifics").
+- Banned phrases, emoji, or hashtags.
+- Title/hook formatting preferences.
+
+Treat these as contextual lens, not rubric overrides: the embedded
+`rubric_prompt` and `response_schema` remain authoritative. When no creator
+profile is in memory, score and package from the rubric alone and, when the
+run finishes, offer to save the user's stated preferences to the harness's
+memory tool for next time — do not write directly to `~/.hermes/memories/` or
+other memory stores.
+
+## Feedback Loop (self-improving profile)
+
+The skill learns from the user's own keep/skip choices. After every render,
+`advance` emits a `feedback_prompt` with the clip IDs. Ask the user which
+clips they actually posted (or plan to post) and record the answer:
 
 ```bash
-CLIPPER_ROOT="${CLIPPER_ROOT:-${CLAUDE_PLUGIN_ROOT:-$PWD}}"
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" feedback \
+  "$WORKSPACE" --kept c1,c4 --skipped c2,c3 --note c2='too long'
+```
+
+Or, for structured payloads from the harness, use `--json` and pipe
+`{"entries": [{"clip_id": "c1", "posted": true, "notes": "..."}, ...]}` on
+stdin.
+
+Each feedback call writes `feedback-log.json` in the workspace and appends
+rows to the global `~/.config/clipper-tool/history.jsonl`. On the next clip
+run, `advance` attaches a `creator_patterns` section to the `score` and
+`package` handoff payloads. That section contains:
+
+- `summary` — total clips, keep rate, per-ratio and per-spike rates.
+- `patterns` — detected regularities, each with a `rule` (human-readable),
+  `confidence` (`low` / `medium` / `high`), `sample_size`, and a
+  `suggested_memory` string.
+
+Apply the patterns alongside `rubric_prompt` when scoring and packaging.
+High-confidence patterns (e.g. "user skips clips over 60s, 92% skip rate
+over 18 samples") should strongly bias rubric weights; low-confidence ones
+are informational. When a pattern is high confidence and not already in the
+harness memory, offer to save its `suggested_memory` via the harness's
+memory tool so the rule becomes a stable preference.
+
+Never write directly to `~/.hermes/memories/`. The skill captures outcomes;
+the harness owns the memory store.
+
+## Preflight
+
+Run this before the first clip job in a session. The prologue resolves the
+skill directory across harnesses:
+
+- **Hermes** substitutes `${HERMES_SKILL_DIR}`.
+- **Claude Code / Codex plugins** substitute `${CLAUDE_PLUGIN_ROOT}`.
+- **Any other harness** must either pin `CLIPPER_ROOT` directly or invoke the
+  prologue from inside the repo checkout so `$PWD` resolves correctly.
+
+```bash
+CLIPPER_ROOT="${CLIPPER_ROOT:-${HERMES_SKILL_DIR:-${CLAUDE_PLUGIN_ROOT:-$PWD}}}"
 CLIPPER_PYTHON="${CLIPPER_PYTHON:-$CLIPPER_ROOT/.venv/bin/python}"
 [ -x "$CLIPPER_PYTHON" ] || CLIPPER_PYTHON="$(command -v python3)"
 "$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-check
 ```
 
-If `HF_TOKEN` is missing and no cached transcript exists, use `/clip-config` or
-ask the user for setup. The real pipeline needs FFmpeg, ffprobe, engine extras,
-and a Hugging Face token for WhisperX/pyannote diarization.
+If neither `HERMES_SKILL_DIR` nor `CLAUDE_PLUGIN_ROOT` is set and the caller
+is not in the repo directory, export `CLIPPER_ROOT` explicitly — the prologue
+will not discover the skill on its own.
+
+If `HF_TOKEN` is missing and no cached transcript exists, use `/clip config` or
+ask the user for setup. The real pipeline needs FFmpeg, ffprobe, an FFmpeg
+build with the `ass` subtitle filter (libass), engine extras, and a Hugging Face
+token for WhisperX/pyannote diarization.
 
 Every subsequent bash block assumes `CLIPPER_ROOT` and `CLIPPER_PYTHON` are
 resolved with the same four-line prologue.
 
-## Main Workflow
+## Main Workflow (agent loop)
 
-1. Prepare a job from the source:
+Prefer the `scripts/hermes_clip.py` driver (named for its Hermes-first design,
+but harness-agnostic — it works anywhere a Python script can shell out + read
+JSON). It advances the pipeline state machine and always prints a single JSON
+payload describing the next action, so each `/clip` turn is exactly one tool
+call plus (when needed) one model handoff.
 
-```bash
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" prepare "$SOURCE" --ratios "9:16,1:1,16:9"
-```
-
-Use narrower ratios only when the user asks. The command prints JSON containing
-`job_path`, `approve_top`, and `min_score`.
-
-2. Mine candidates:
+1. Start or resume a job:
 
 ```bash
-"$CLIPPER_PYTHON" -m clipper.cli run "$JOB_PATH" --stage mine
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" advance --source "$SOURCE"
 ```
 
-This writes `scoring-request.json` under the job workspace.
+Use `--ratios 9:16,1:1` or `--clips 2` only when the user asks. The payload
+contains `workspace`, `next_action`, and—when a model handoff is required—
+`handoff_request_path` and `handoff_response_path`.
 
-3. Score every clip as the harness model:
+2. When `next_action == "score"`:
 
-- Read `scoring-request.json`.
+- Read the request at `handoff_request_path`.
 - Follow its embedded `rubric_prompt` and `response_schema`.
-- Score every `ClipBrief`; do not invent `clip_id` or `clip_hash`.
-- Use transcript, mining signals, spike categories, penalties, and standalone
-  clarity evidence.
-- Write a valid `scoring-response.json` beside the request.
-
-4. Build the review manifest:
-
-```bash
-"$CLIPPER_PYTHON" -m clipper.cli run "$JOB_PATH" --stage review
-```
-
-5. Approve selected clips:
-
-```bash
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" approve "$REVIEW_MANIFEST" --top "$APPROVE_TOP" --min-score "$MIN_SCORE"
-```
-
-The helper approves top scoring clips above threshold. If none clear the
-threshold, it approves the best clip so the user gets a concrete output.
-
-6. Render approved clips:
+- Check loaded harness memory for any **creator profile** preferences before
+  scoring — target platform (TikTok/Reels/Shorts), preferred clip length,
+  caption style, brand tone, hook style, and banned topics or phrases. Let
+  those bias scores, spike categories, and penalties. The rubric stays
+  authoritative; creator preferences act as tiebreakers and contextual lens.
+- If the advance payload includes a `creator_patterns` field (populated from
+  past feedback), treat high-confidence patterns as strong bias signals and
+  medium/low as informational. See the "Feedback Loop" section above.
+- Score every `ClipBrief`, preserving `clip_id` and `clip_hash` verbatim.
+- Write `handoff_response_path` with a valid `ScoringResponse`.
+- Re-run advance on the workspace:
 
 ```bash
-"$CLIPPER_PYTHON" -m clipper.cli run "$JOB_PATH" --stage render
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE"
 ```
 
-Rendering is deterministic and does not spend model tokens. Render all three
-ratios by default; render only requested ratios when the user explicitly asks.
+  Advance builds the review manifest, auto-approves the top-scoring clips
+  above the configured threshold (falling back to the best clip if none
+  clear it), and renders the approved clips.
 
-7. Report outputs:
+3. When `next_action == "done-renders"`, the payload includes `clips[]` with
+   `renders` keyed by ratio and a `feedback_prompt` with the clip IDs. Return
+   the MP4 paths plus the workspace path to the user, then ask which clips
+   they kept or plan to post. Pipe the answer into `hermes_clip.py feedback`
+   (see the "Feedback Loop" section) so the creator profile keeps learning.
+   Mention if any requested ratio was skipped.
 
-```bash
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" outputs "$RENDER_REPORT"
-```
+4. When `next_action == "error"`, surface the `error` string and the `stage`
+   it happened in. Do not retry silently—diagnose or ask the user.
 
-Return the final MP4 paths grouped by clip and ratio. Include the job workspace
-path and mention if any requested ratio was not rendered.
+### Deterministic fallback (raw primitives)
+
+If the harness cannot use `hermes_clip.py`, the older step-by-step flow still
+works. Run `prepare` → `clipper.cli run --stage mine` → score → `--stage
+review` → `clip_skill.py approve` → `--stage render` → `clip_skill.py outputs`.
+See git history for the long form; `hermes_clip.py` encodes the same sequence.
 
 ## Packaging Workflow
 
-Use `/clip-package` after a render finishes to produce per-clip publish packs
+Use `/clip package` after a render finishes to produce per-clip publish packs
 (5+ title candidates, thumbnail overlay lines, a social caption, hashtags, and
-opening-line hooks). Packaging mirrors the scoring handoff: the clipper emits a
-request with an embedded prompt + response schema, the harness model fills in
-the response, the clipper validates and persists per-clip artifacts.
+opening-line hooks). The `hermes_clip.py` driver handles workspace resolution
+and packaging handoff; it uses the newest job workspace when none is given.
 
-1. Emit the packaging request for the workspace:
+1. Resume the latest workspace (or pass one explicitly) and advance through
+   packaging:
 
 ```bash
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" package-prompt "$WORKSPACE"
+WORKSPACE=$("$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" latest-workspace --plain)
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE" --package
 ```
 
-`$WORKSPACE` is the `jobs/<job_id>/` directory containing
-`review-manifest.json` + `scoring-request.json`. The helper writes
-`package-request.json` and prints the approved `clip_ids` plus
-`prompt_version`.
+2. When `next_action == "package"`:
 
-2. Score every clip as the harness model:
-
-- Read `package-request.json`.
+- Read `handoff_request_path` (`package-request.json`).
 - Follow its embedded `package_prompt` and `response_schema`.
-- Produce one `PublishPack` per clip in the same order, preserving `clip_id`
-  and `clip_hash` verbatim.
-- Write a valid `package-response.json` beside the request.
-
-3. Save the packs:
+- Apply any **creator profile** rules from harness memory: caption style
+  (clean vs. punchy vs. verbose), brand tone, banned phrases or emoji,
+  hashtag preferences, hook pattern, and title formatting. The schema is
+  authoritative; preferences shape phrasing inside it.
+- If the advance payload includes `creator_patterns`, let high-confidence
+  patterns guide hook length, pacing references, and hashtag vocabulary.
+- Produce one `PublishPack` per clip preserving `clip_id` + `clip_hash`.
+- Write `handoff_response_path` (`package-response.json`).
+- Re-run advance:
 
 ```bash
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" package-save "$WORKSPACE"
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE"
 ```
 
-The helper validates the response, writes one `renders/<clip_id>/package.json`
-per clip (next to the rendered MP4s), and emits a rolled-up
-`package-report.json` in the workspace root.
-
-Report the per-clip `package.json` paths along with the rendered MP4 paths so
-the user can paste titles + captions + hashtags straight into the upload form.
+3. When `next_action == "done-package"`, the payload includes `clips[]` with
+   `renders` and `package` paths. Report the per-clip `package.json` paths
+   alongside the rendered MP4 paths so the user can paste titles, captions,
+   and hashtags straight into the upload form.
 
 ## Config Workflow
 
-Use `/clip-config` when setup is missing or the user wants defaults changed.
+Use `/clip config` when setup is missing or the user wants defaults changed.
 The helper stores config at `~/.config/clipper-tool/.env`:
 
 ```bash

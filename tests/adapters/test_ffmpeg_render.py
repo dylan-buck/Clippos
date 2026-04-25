@@ -135,7 +135,26 @@ def test_build_ffmpeg_command_filter_chain_scales_to_canonical_dims(
     assert f"crop={crop_plan.target_width}:{crop_plan.target_height}" in filter_value
     assert f"scale={canonical_width}:{canonical_height}" in filter_value
     assert "flags=lanczos" in filter_value
-    assert "ass=" in filter_value
+    assert "ass=filename=" in filter_value
+
+
+def test_build_ffmpeg_command_uses_named_ass_filename_option_for_absolute_paths(
+    sample_manifest: RenderManifest, tmp_path: Path
+) -> None:
+    crop_plan = sample_manifest.crop_plans["9:16"]
+    subtitle_path = tmp_path / "nested" / "clip-001-9x16.ass"
+
+    command = build_ffmpeg_command(
+        ffmpeg_binary="ffmpeg",
+        manifest=sample_manifest,
+        ratio="9:16",
+        crop_plan=crop_plan,
+        subtitle_path=subtitle_path,
+        output_path=tmp_path / "out.mp4",
+    )
+
+    filter_value = command[command.index("-vf") + 1]
+    assert f"ass=filename='{subtitle_path}'" in filter_value
 
 
 def test_build_ffmpeg_command_clamps_crop_origin_to_source_bounds(
@@ -174,6 +193,17 @@ def test_render_clip_raises_when_ffmpeg_missing(
         render_clip(sample_manifest)
 
 
+def test_render_clip_raises_when_ffmpeg_lacks_ass_filter(
+    sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ffmpeg_render, "_ffmpeg_available", lambda _binary: True)
+    monkeypatch.setattr(ffmpeg_render, "_ffmpeg_filter_available", lambda *_args: True)
+    monkeypatch.setattr(ffmpeg_render, "_ffmpeg_filter_available", lambda *_args: False)
+
+    with pytest.raises(FFmpegRenderError, match="ASS subtitle filter"):
+        render_clip(sample_manifest)
+
+
 def test_render_clip_skips_unapproved_manifest(
     sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -191,6 +221,7 @@ def test_render_clip_raises_on_non_zero_exit(
     sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(ffmpeg_render, "_ffmpeg_available", lambda _binary: True)
+    monkeypatch.setattr(ffmpeg_render, "_ffmpeg_filter_available", lambda *_args: True)
 
     def fake_run(
         command: list[str], **_kwargs: Any
@@ -209,6 +240,7 @@ def test_render_clip_writes_ass_sidecars_and_returns_results(
     sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(ffmpeg_render, "_ffmpeg_available", lambda _binary: True)
+    monkeypatch.setattr(ffmpeg_render, "_ffmpeg_filter_available", lambda *_args: True)
     invocations: list[list[str]] = []
 
     def fake_run(
@@ -235,6 +267,7 @@ def test_render_clip_ass_document_has_expected_sections_and_emphasis(
     sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(ffmpeg_render, "_ffmpeg_available", lambda _binary: True)
+    monkeypatch.setattr(ffmpeg_render, "_ffmpeg_filter_available", lambda *_args: True)
 
     def fake_run(
         command: list[str], **_kwargs: Any
@@ -266,6 +299,7 @@ def test_render_clip_honors_custom_subtitle_dir(
     sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(ffmpeg_render, "_ffmpeg_available", lambda _binary: True)
+    monkeypatch.setattr(ffmpeg_render, "_ffmpeg_filter_available", lambda *_args: True)
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -348,7 +382,7 @@ def test_general_mode_emits_filter_complex_with_blur_and_overlay(
         in filter_graph
     )
     assert "overlay=(W-w)/2:(H-h)/2" in filter_graph
-    assert "ass='" in filter_graph
+    assert "ass=filename='" in filter_graph
     # Output mapping explicit so the audio track survives.
     map_indices = [i for i, arg in enumerate(command) if arg == "-map"]
     assert len(map_indices) == 2
@@ -361,6 +395,7 @@ def test_render_clip_general_mode_invokes_ffmpeg_and_writes_subs(
 ) -> None:
     general_manifest = sample_manifest.model_copy(update={"mode": "GENERAL"})
     monkeypatch.setattr(ffmpeg_render, "_ffmpeg_available", lambda _binary: True)
+    monkeypatch.setattr(ffmpeg_render, "_ffmpeg_filter_available", lambda *_args: True)
 
     invocations: list[list[str]] = []
 

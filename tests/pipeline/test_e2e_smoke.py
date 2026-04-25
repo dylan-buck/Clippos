@@ -22,6 +22,8 @@ def test_smoke_mine_review_approve_render_with_real_ffmpeg(
 ) -> None:
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         pytest.skip("FFmpeg smoke test requires ffmpeg and ffprobe on PATH")
+    if not _ffmpeg_has_filter("ass"):
+        pytest.skip("FFmpeg smoke test requires an FFmpeg build with libass/ass filter")
 
     source_video = tmp_path / "source.mp4"
     output_dir = tmp_path / "out"
@@ -94,6 +96,19 @@ def test_smoke_mine_review_approve_render_with_real_ffmpeg(
         rendered = workspace_dir / relative_path
         assert rendered.exists()
         assert rendered.stat().st_size > 0
+
+
+def _ffmpeg_has_filter(filter_name: str) -> bool:
+    result = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-filters"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    needle = f" {filter_name} "
+    return any(needle in line for line in result.stdout.splitlines())
 
 
 def _write_synthetic_video(path: Path) -> None:

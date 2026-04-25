@@ -1,9 +1,181 @@
 # Clipper Tool
 
-Local-first clipping engine and agent skill for Claude Code, Codex, and Hermes
-Agent.
+Turn any long-form video into captioned, viral-ready social clips with a
+single `/clip` call in your agent. Ships as a skill for
+[Hermes](https://hermes-agent.nousresearch.com), Claude Code, and Codex — and
+runs in any harness that can execute a Python script and read JSON.
 
-## Local Setup
+The engine does the hard media work locally (transcription, diarization, face
+detection, optical-flow motion scoring, virtual-camera cropping, ASS caption
+burn-in, multi-ratio render). The active agent's model handles the
+*judgement* work (which clips are worth posting, titles, captions, hashtags)
+via a JSON handoff — so the clipper never locks you into a specific
+provider, inherits your agent's memory + preferences, and learns from your
+keep/skip decisions over time.
+
+Designed Hermes-first. Works anywhere.
+
+## Install
+
+| Harness            | Install                                                                             | Command surface                          |
+| ------------------ | ----------------------------------------------------------------------------------- | ---------------------------------------- |
+| **Hermes**         | `ln -s /absolute/path/to/clipping-tool ~/.hermes/skills/clip`                       | `/clip`, `/clip config`, `/clip package` |
+| **Claude Code**    | `/plugin install ./.claude-plugin` (or copy the repo into `~/.claude/skills/clip`)  | `/clip`, `/clip-config`, `/clip-package` |
+| **Codex**          | Load `.codex-plugin/plugin.json` via your Codex plugin loader                       | `/clip`, `/clip-config`, `/clip-package` |
+| **Any harness**    | Clone the repo, export `CLIPPER_ROOT=/abs/path/to/clipping-tool`, run the scripts   | `hermes_clip.py advance --source ...`    |
+
+All four install paths resolve to the same `SKILL.md` and the same helper
+scripts. After install, see the per-harness steps below, then run the
+[local dev setup](#local-dev-setup) once to get `.venv` + `ffmpeg`.
+
+### Hermes
+
+```bash
+# From the project root
+mkdir -p ~/.hermes/skills
+ln -s "$(pwd)" ~/.hermes/skills/clip
+```
+
+Start a fresh Hermes session and the `/clip` skill appears automatically.
+Hermes reads `SKILL.md` directly and substitutes `${HERMES_SKILL_DIR}` with
+the installed skill directory. Typical flow:
+
+```text
+/clip /absolute/path/video.mp4
+/clip https://cdn.discordapp.com/attachments/... --ratios 9:16,1:1 --clips 2
+/clip config --output-dir ~/Documents/ClipperTool --hf-token hf_...
+/clip package
+```
+
+Attachment URLs dropped into Discord/Telegram are detected and downloaded
+directly (yt-dlp is skipped for signed CDN URLs).
+
+### Claude Code
+
+If you have Claude Code's plugin system:
+
+```bash
+# Quickest — point Claude Code at the local plugin
+/plugin install /absolute/path/to/clipping-tool/.claude-plugin
+```
+
+Or copy the repo into `~/.claude/skills/clip`. Claude Code exposes three
+slash commands via the `commands/*.md` shims:
+
+```text
+/clip /absolute/path/video.mp4
+/clip-config --output-dir ~/Documents/ClipperTool --hf-token hf_...
+/clip-package
+```
+
+Claude Code substitutes `${CLAUDE_PLUGIN_ROOT}` in the prologue
+automatically.
+
+### Codex
+
+Codex follows the same plugin shape as Claude Code. Point your Codex plugin
+loader at `.codex-plugin/plugin.json` (or symlink the repo into Codex's
+skill directory). Commands are identical to Claude Code: `/clip`,
+`/clip-config`, `/clip-package`.
+
+### Any other harness (generic)
+
+If you're running a harness without a built-in plugin system (custom agent
+framework, bare terminal, a provider SDK), install manually:
+
+```bash
+git clone https://github.com/dylan-buck/clipping-tool
+cd clipping-tool
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -e ".[engine,dev]"
+export CLIPPER_ROOT="$(pwd)"
+```
+
+Then drive the pipeline with `hermes_clip.py`:
+
+```bash
+"$CLIPPER_ROOT/.venv/bin/python" "$CLIPPER_ROOT/scripts/hermes_clip.py" \
+  advance --source /absolute/path/video.mp4
+```
+
+The script prints structured JSON with a `next_action`: `score`, `package`,
+`done-renders`, `done-package`, `error`, or `configure`. Your harness reads
+the JSON, writes the scoring/packaging response when prompted, then calls
+`advance --workspace "$WORKSPACE"` again to continue.
+
+## What it does
+
+One concrete example. You have a 45-minute podcast recording. In your agent:
+
+```text
+/clip ~/Downloads/podcast.mp3.mp4 --ratios 9:16 --clips 3
+```
+
+The skill:
+
+1. Transcribes + diarizes locally (WhisperX + pyannote).
+2. Analyzes vision: scene cuts, face positions, optical-flow motion.
+3. Mines 12 candidate 20–60 second windows with strong hooks, payoffs, and
+   spike signals (controversy, emotional beat, unusually useful claim, etc.).
+4. Asks your agent's active model to score each candidate against a fixed
+   rubric (hook, shareability, standalone clarity, payoff, delivery energy,
+   quotability) plus creator-profile cues from past runs.
+5. Auto-approves the top 3 above your quality threshold (or falls back to
+   the best).
+6. Virtual-camera-crops each approved clip to 9:16, burns ASS captions in
+   the configured preset, renders an H.264/AAC mp4.
+7. Returns the workspace path and mp4 paths to your agent.
+
+Optionally follow up with `/clip package` to generate title candidates,
+thumbnail overlay lines, social captions, hashtags, and opening-line hooks
+for every rendered clip.
+
+## What makes it unique
+
+- **Harness-agnostic.** The clipper never calls an LLM directly — it hands
+  every semantic decision to whatever model your agent is running. Same
+  engine, any provider.
+- **Chat-native.** Drop a video in Hermes Discord or Telegram, get back
+  finished mp4s in the same thread. Discord CDN and Telegram bot-file URLs
+  are detected automatically.
+- **Self-improving creator profile.** After each run, record which clips you
+  posted vs. skipped (`/clip feedback` or programmatically via
+  `hermes_clip.py feedback`). The skill aggregates patterns across runs
+  (length bias, spike-category preference, ratio preference, score
+  disagreement) with confidence tiers and surfaces them to the next scoring
+  handoff. Rules can be promoted into the harness's memory.
+- **Local-first.** Transcription, vision, and rendering all run on your
+  machine. No video data leaves your laptop until you publish.
+- **Deterministic engine, judgement delegated.** The clipper validates every
+  handoff against a strict JSON schema with `clip_id`/`clip_hash` integrity
+  checks, so model outputs can't silently corrupt a run.
+
+## How it works
+
+The pipeline is a three-stage state machine: `mine` → `review` → `render`.
+Each stage writes a JSON artifact in the workspace. Scoring and packaging
+are model handoffs: the engine writes a request JSON, the agent writes a
+response JSON, the engine validates and continues.
+
+```text
+/clip video.mp4
+    │
+    ├─→ mine       → scoring-request.json
+    │               (agent scores → scoring-response.json)
+    ├─→ review     → review-manifest.json (auto-approves top N)
+    ├─→ render     → render-report.json + renders/<clip>/<clip>-{9x16,1x1,16x9}.mp4
+    │
+    └─ /clip package
+        ├─→ package-prompt → package-request.json
+        │                    (agent packages → package-response.json)
+        └─→ package-save    → renders/<clip>/package.json
+                              + package-report.json
+```
+
+The full skill flow, including creator-profile memory, feedback loop, and
+raw-primitive fallback, is in [SKILL.md](SKILL.md).
+
+## Local dev setup
 
 Requirements:
 
@@ -138,39 +310,21 @@ an LLM API directly and does not use any provider SDK or API key.
 
 See [docs/architecture/scoring-handoff.md](docs/architecture/scoring-handoff.md) for the full rubric, schema, and caching rules.
 
-## Agent Skill Flow
+## Configuration
 
-The repo can also be used as an agent skill. The skill entrypoint is
-[SKILL.md](SKILL.md), with slash-command shims in [commands/clip.md](commands/clip.md)
-and [commands/clip-config.md](commands/clip-config.md).
-
-Target invocation shape:
-
-```text
-/clip /absolute/path/video.mp4
-/clip https://example.com/video.mp4 --ratios 9:16,1:1 --clips 2
-/clip-config --output-dir ~/Documents/ClipperTool --ratios 9:16,1:1,16:9
-```
-
-For attached videos, the agent should resolve the attachment to a local file
-path and pass that path into `/clip`. Direct video URLs are downloaded with the
-skill helper. Platform URLs can work when `yt-dlp` is installed.
-
-The helper script resolves `CLIPPER_ROOT` against `CLAUDE_PLUGIN_ROOT` when the
-skill is installed as a plugin, and falls back to the repo checkout when run
-locally:
+Skill configuration lives at `~/.config/clipper-tool/.env`. Write it
+through the skill rather than hand-editing:
 
 ```bash
-CLIPPER_ROOT="${CLIPPER_ROOT:-${CLAUDE_PLUGIN_ROOT:-$PWD}}"
-CLIPPER_PYTHON="${CLIPPER_PYTHON:-$CLIPPER_ROOT/.venv/bin/python}"
-[ -x "$CLIPPER_PYTHON" ] || CLIPPER_PYTHON="$(command -v python3)"
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-check
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" prepare "$SOURCE"
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" approve "$REVIEW_MANIFEST" --top 3 --min-score 0.70
-"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" outputs "$RENDER_REPORT"
+"$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-write \
+  --output-dir "$HOME/Documents/ClipperTool" \
+  --ratios "9:16,1:1,16:9" \
+  --approve-top 3 \
+  --min-score 0.70 \
+  --hf-token "$HF_TOKEN"
 ```
 
-Skill configuration is stored at `~/.config/clipper-tool/.env`. Supported keys:
+Supported keys:
 
 ```env
 CLIPPER_OUTPUT_DIR=~/Documents/ClipperTool
@@ -181,10 +335,30 @@ CLIPPER_MIN_SCORE=0.70
 HF_TOKEN=hf_...
 ```
 
-The skill renders all three ratios by default because rendering is deterministic
-and does not use the harness model. If the user asks for fewer formats, the job
-uses `output_profile.ratios` and the render stage only writes those requested
-outputs.
+The skill renders all three ratios by default because rendering is
+deterministic and does not use the agent's model. Narrow the set with
+`--ratios` only when the user explicitly asks.
+
+## Demo (two-minute flow)
+
+Pick any known-good local video 5–10 minutes long.
+
+1. **Install.** `ln -s $(pwd) ~/.hermes/skills/clip` (or the Claude
+   Code / Codex equivalent above).
+2. **Configure.** In your agent, run `/clip config --output-dir
+   ~/Documents/ClipperTool --hf-token "$HF_TOKEN"` (Hermes) or
+   `/clip-config ...` (Claude Code / Codex). Writes the `.env`.
+3. **Clip.** Run `/clip ~/Downloads/sample-talk.mp4 --ratios 9:16,1:1
+   --clips 2`. The agent scores each candidate with its active model,
+   the skill auto-approves the top 2 and renders them, and the agent
+   reports back the workspace + mp4 paths.
+4. **Package.** Run `/clip package`. Produces per-clip `package.json`
+   with titles, thumbnail overlay lines, social caption, hashtags, and
+   opening-line hooks.
+5. **Learn.** Tell the agent which clips you actually posted:
+   `hermes_clip.py feedback <workspace> --kept c1 --skipped c2 --note
+   c2='too long'`. The next `/clip` run will surface patterns in the
+   scoring handoff.
 
 ## Current v1 Limitations
 
@@ -197,7 +371,8 @@ outputs.
   best available PyTorch device (`mps` / `cuda` / `cpu`).
 - Scoring runs only when the surrounding harness writes a valid
   `scoring-response.json`; the clipper itself does not invoke any LLM.
-- The render stage requires `ffmpeg` on your `PATH` (libx264 + AAC). The render
+- The render stage requires `ffmpeg` on your `PATH` (libx264 + AAC + libass /
+  `ass` filter for caption burn-in). The render
   manifest carries a per-clip `mode` (`TRACK` or `GENERAL`) derived from the
   vision timeline. `TRACK` builds a virtual-camera crop that holds inside a
   safe zone and pans at a bounded rate (piecewise-linear ffmpeg crop

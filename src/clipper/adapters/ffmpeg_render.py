@@ -57,6 +57,11 @@ def render_clip(
         raise FFmpegRenderError(
             f"{ffmpeg_binary!r} not found on PATH; install FFmpeg to render"
         )
+    if not _ffmpeg_filter_available(ffmpeg_binary, "ass"):
+        raise FFmpegRenderError(
+            f"{ffmpeg_binary!r} was found but does not provide the ASS subtitle filter; "
+            "install an FFmpeg build with libass support to render captions"
+        )
 
     caption_style = resolve_caption_style(manifest.caption_preset)
     results: list[RenderResult] = []
@@ -89,6 +94,22 @@ def render_clip(
 
 def _ffmpeg_available(ffmpeg_binary: str) -> bool:
     return shutil.which(ffmpeg_binary) is not None
+
+
+def _ffmpeg_filter_available(ffmpeg_binary: str, filter_name: str) -> bool:
+    try:
+        completed = subprocess.run(
+            [ffmpeg_binary, "-hide_banner", "-filters"],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except OSError:
+        return False
+    if completed.returncode != 0:
+        return False
+    needle = f" {filter_name} "
+    return any(needle in line for line in completed.stdout.splitlines())
 
 
 def _run_ffmpeg(
@@ -160,7 +181,7 @@ def _build_track_command(
         f"crop={crop_plan.target_width}:{crop_plan.target_height}:"
         f"{x_expr}:{y_expr},"
         f"scale={canonical_width}:{canonical_height}:flags=lanczos,"
-        f"ass='{_escape_for_filter(subtitle_path)}'"
+        f"ass=filename='{_escape_for_filter(subtitle_path)}'"
     )
     return _with_common_encode_flags(
         _common_input_flags(ffmpeg_binary, manifest),
@@ -213,7 +234,7 @@ def _build_general_filter_complex(
         f"[fg_src]scale={canonical_width}:{canonical_height}:"
         "force_original_aspect_ratio=decrease:flags=lanczos[fg];"
         "[bg][fg]overlay=(W-w)/2:(H-h)/2[composited];"
-        f"[composited]ass='{subs}'[out]"
+        f"[composited]ass=filename='{subs}'[out]"
     )
 
 
