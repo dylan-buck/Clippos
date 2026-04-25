@@ -170,6 +170,12 @@ def cmd_config_check(args: argparse.Namespace) -> int:
         "ffmpeg_filters": {
             "ass": ffmpeg_filter_available("ass"),
         },
+        # The render stage now goes through clipper.adapters.ffmpeg_resolver
+        # which auto-falls-back to the vendored static-ffmpeg binary when
+        # the system ffmpeg lacks libass. Surface the resolution outcome so
+        # users can see whether render will use their system build or
+        # download the vendored one on first call.
+        "ffmpeg_render": probe_render_ffmpeg(),
         "env": {
             "CLIPPER_OUTPUT_DIR": bool(config.get("CLIPPER_OUTPUT_DIR")),
             "CLIPPER_RATIOS": bool(config.get("CLIPPER_RATIOS")),
@@ -190,6 +196,46 @@ def cmd_config_check(args: argparse.Namespace) -> int:
     }
     print(json.dumps(payload, indent=2))
     return 0
+
+
+def probe_render_ffmpeg() -> dict[str, object]:
+    """Probe the resolver, return a JSON-friendly status dict.
+
+    Either:
+      {ready: True, source: "system"|"vendored", ffmpeg_path, ffprobe_path}
+    or:
+      {ready: False, hint: <how to install>}
+    Never raises — preflight surfaces should report status, not crash.
+    """
+    try:
+        from clipper.adapters.ffmpeg_resolver import probe_ffmpeg
+    except ImportError as exc:  # engine extras not installed
+        return {
+            "ready": False,
+            "hint": (
+                "Engine extras not installed. Run: "
+                "pip install -e '.[engine]' (provides static-ffmpeg + libass-"
+                "capable binary)."
+            ),
+            "import_error": str(exc),
+        }
+    resolved = probe_ffmpeg()
+    if resolved is None:
+        return {
+            "ready": False,
+            "hint": (
+                "No FFmpeg with libass support found and the static-ffmpeg "
+                "fallback is unavailable. Install engine extras "
+                "(`pip install -e '.[engine]'`) or a system FFmpeg with "
+                "libass (e.g. `brew reinstall ffmpeg` on macOS)."
+            ),
+        }
+    return {
+        "ready": True,
+        "source": resolved.source,
+        "ffmpeg_path": str(resolved.ffmpeg),
+        "ffprobe_path": str(resolved.ffprobe),
+    }
 
 
 def cmd_config_write(args: argparse.Namespace) -> int:

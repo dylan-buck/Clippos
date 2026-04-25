@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from clipper.adapters import ffmpeg_render
+from clipper.adapters import ffmpeg_resolver as fr
 from clipper.adapters.ffmpeg_render import (
     CANONICAL_OUTPUT_DIMS,
     EMPHASIS_COLOR_BGR,
@@ -23,6 +24,25 @@ from clipper.models.render import (
     CropPlan,
     RenderManifest,
 )
+
+
+@pytest.fixture(autouse=True)
+def _stub_render_ffmpeg_resolver(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests that call ``render_clip(manifest)`` without an explicit
+    ``ffmpeg_binary`` now go through ``ffmpeg_resolver.resolve_ffmpeg``,
+    which would otherwise probe the system + try to download the vendored
+    binary. We stub it to a fake ResolvedFFmpeg so existing tests keep
+    exercising their subprocess + filter-availability stubs.
+    """
+    fake = fr.ResolvedFFmpeg(
+        ffmpeg=Path("/usr/local/bin/ffmpeg"),
+        ffprobe=Path("/usr/local/bin/ffprobe"),
+        source=fr.SOURCE_SYSTEM,
+    )
+    monkeypatch.setattr(
+        fr, "resolve_ffmpeg", lambda *, force_refresh=False: fake
+    )
+    fr.reset_cache()
 
 
 def _anchor(t: float, x: float = 0.5, y: float = 0.5) -> CropAnchor:
@@ -184,23 +204,41 @@ def test_build_ffmpeg_command_clamps_crop_origin_to_source_bounds(
     assert int(origin_y) == 0
 
 
-def test_render_clip_raises_when_ffmpeg_missing(
+def test_render_clip_raises_when_explicit_ffmpeg_missing(
     sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """When the caller pins a specific binary, we still validate it.
+    (Default `ffmpeg_binary=None` goes through the resolver which has
+    its own fallback to a vendored binary, exercised separately.)"""
     monkeypatch.setattr(ffmpeg_render, "_ffmpeg_available", lambda _binary: False)
 
     with pytest.raises(FFmpegRenderError, match="not found on PATH"):
-        render_clip(sample_manifest)
+        render_clip(sample_manifest, ffmpeg_binary="ffmpeg")
 
 
-def test_render_clip_raises_when_ffmpeg_lacks_ass_filter(
+def test_render_clip_raises_when_explicit_ffmpeg_lacks_ass_filter(
     sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Explicit-binary path validates libass too — see comment above."""
     monkeypatch.setattr(ffmpeg_render, "_ffmpeg_available", lambda _binary: True)
-    monkeypatch.setattr(ffmpeg_render, "_ffmpeg_filter_available", lambda *_args: True)
     monkeypatch.setattr(ffmpeg_render, "_ffmpeg_filter_available", lambda *_args: False)
 
     with pytest.raises(FFmpegRenderError, match="ASS subtitle filter"):
+        render_clip(sample_manifest, ffmpeg_binary="ffmpeg")
+
+
+def test_render_clip_default_path_falls_back_to_resolver_when_system_ffmpeg_missing(
+    sample_manifest: RenderManifest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the resolver can't find any ffmpeg + can't download the
+    vendored fallback, the default code path surfaces a clean
+    FFmpegRenderError instead of a raw ImportError."""
+    def _explode_resolve(*, force_refresh: bool = False):
+        raise fr.FFmpegNotFoundError("no ffmpeg with libass available")
+
+    monkeypatch.setattr(fr, "resolve_ffmpeg", _explode_resolve)
+
+    with pytest.raises(FFmpegRenderError, match="no ffmpeg with libass"):
         render_clip(sample_manifest)
 
 

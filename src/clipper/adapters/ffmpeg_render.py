@@ -48,20 +48,39 @@ def render_clip(
     manifest: RenderManifest,
     *,
     subtitle_dir: Path | None = None,
-    ffmpeg_binary: str = "ffmpeg",
+    ffmpeg_binary: str | None = None,
 ) -> list[RenderResult]:
     if not manifest.approved:
         return []
 
-    if not _ffmpeg_available(ffmpeg_binary):
-        raise FFmpegRenderError(
-            f"{ffmpeg_binary!r} not found on PATH; install FFmpeg to render"
+    if ffmpeg_binary is None:
+        # Default path: ask the resolver for a libass-capable binary. It
+        # prefers the system ffmpeg when usable and falls back to the
+        # vendored static-ffmpeg PyPI binary (downloads on first call).
+        # That guarantees rendering works on any install — no
+        # `brew install ffmpeg` required up front.
+        from clipper.adapters.ffmpeg_resolver import (
+            FFmpegNotFoundError,
+            resolve_ffmpeg,
         )
-    if not _ffmpeg_filter_available(ffmpeg_binary, "ass"):
-        raise FFmpegRenderError(
-            f"{ffmpeg_binary!r} was found but does not provide the ASS subtitle filter; "
-            "install an FFmpeg build with libass support to render captions"
-        )
+
+        try:
+            resolved = resolve_ffmpeg()
+        except FFmpegNotFoundError as exc:
+            raise FFmpegRenderError(str(exc)) from exc
+        ffmpeg_binary = str(resolved.ffmpeg)
+    else:
+        # Caller pinned a specific binary (typically a test). Validate it
+        # before doing any work.
+        if not _ffmpeg_available(ffmpeg_binary):
+            raise FFmpegRenderError(
+                f"{ffmpeg_binary!r} not found on PATH; install FFmpeg to render"
+            )
+        if not _ffmpeg_filter_available(ffmpeg_binary, "ass"):
+            raise FFmpegRenderError(
+                f"{ffmpeg_binary!r} was found but does not provide the ASS subtitle filter; "
+                "install an FFmpeg build with libass support to render captions"
+            )
 
     caption_style = resolve_caption_style(manifest.caption_preset)
     results: list[RenderResult] = []

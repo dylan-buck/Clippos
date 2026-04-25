@@ -140,12 +140,17 @@ def cmd_preflight(args: argparse.Namespace) -> int:
         "yt-dlp": bool(_which("yt-dlp")),
     }
     ass_filter = clip_skill.ffmpeg_filter_available("ass")
+    # Render goes through the resolver, which auto-falls-back to the
+    # vendored static-ffmpeg binary when the system ffmpeg lacks libass.
+    # If the resolver succeeds (system OR vendored), libass is no longer
+    # a "missing" requirement.
+    ffmpeg_render_status = clip_skill.probe_render_ffmpeg()
     missing: list[str] = []
-    if not bins["ffmpeg"]:
+    if not bins["ffmpeg"] and not ffmpeg_render_status.get("ready"):
         missing.append("ffmpeg")
-    if not bins["ffprobe"]:
+    if not bins["ffprobe"] and not ffmpeg_render_status.get("ready"):
         missing.append("ffprobe")
-    if not ass_filter:
+    if not ass_filter and not ffmpeg_render_status.get("ready"):
         missing.append("ffmpeg-libass")
 
     has_hf_token = bool(clip_skill.resolve_hf_token(config))
@@ -157,6 +162,7 @@ def cmd_preflight(args: argparse.Namespace) -> int:
         "missing": missing,
         "bins": bins,
         "ffmpeg_filters": {"ass": ass_filter},
+        "ffmpeg_render": ffmpeg_render_status,
         "config_path": str(args.config.expanduser()),
         "defaults": clip_skill.resolved_defaults(config),
         # HF_TOKEN is no longer a hard requirement — the default diarizer is
@@ -172,10 +178,12 @@ def cmd_preflight(args: argparse.Namespace) -> int:
     }
     if not ready:
         payload["instructions"] = (
-            "Run `/clip config` to fix missing system requirements (FFmpeg + "
-            "libass). Diarization works out of the box without HF_TOKEN; the "
-            "token is only needed if the user explicitly wants the pyannote "
-            "upgrade."
+            "Run `/clip config` to fix missing system requirements. The "
+            "render stage needs FFmpeg with libass — install the engine "
+            "extras (`pip install -e '.[engine]'`) and the vendored "
+            "static-ffmpeg binary will be used automatically. Diarization "
+            "works out of the box without HF_TOKEN; the token is only "
+            "needed if the user explicitly wants the pyannote upgrade."
         )
     _emit(payload)
     return 0
