@@ -584,7 +584,7 @@ def test_approve_marks_top_scoring_candidates(tmp_path: Path) -> None:
     ]
 
 
-def test_approve_falls_back_to_best_clip_when_threshold_filters_all(
+def test_approve_falls_back_to_available_clips_when_threshold_filters_all(
     tmp_path: Path,
 ) -> None:
     manifest_path = tmp_path / "review-manifest.json"
@@ -620,7 +620,50 @@ def test_approve_falls_back_to_best_clip_when_threshold_filters_all(
 
     assert result.returncode == 0
     payload = json.loads(result.stdout)
-    assert payload["approved_clip_ids"] == ["clip-a"]
+    assert payload["approved_clip_ids"] == ["clip-a", "clip-b"]
+    assert payload["requested_top"] == 3
+    assert payload["approved_count"] == 2
+    assert payload["threshold_met_count"] == 0
+
+
+def test_approve_fills_to_requested_top_below_threshold(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "review-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "job_id": "job-1",
+                "video_path": "/tmp/input.mp4",
+                "candidates": [
+                    _candidate("clip-a", 0.92),
+                    _candidate("clip-b", 0.80),
+                    _candidate("clip-c", 0.50),
+                    _candidate("clip-d", 0.40),
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "approve",
+            str(manifest_path),
+            "--top",
+            "3",
+            "--min-score",
+            "0.75",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["approved_clip_ids"] == ["clip-a", "clip-b", "clip-c"]
+    assert payload["threshold_met_count"] == 2
 
 
 def test_outputs_formats_render_report(tmp_path: Path) -> None:

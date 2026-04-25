@@ -15,6 +15,7 @@ class VisionConfig:
     sample_fps: float = 2.0
     scene_threshold: float = 27.0
     face_min_confidence: float = 0.5
+    face_frame_width: int = 960
     motion_frame_width: int = 256
     one_euro_min_cutoff: float = 1.0
     one_euro_beta: float = 0.1
@@ -149,12 +150,12 @@ def _sample_frames(video_path: Path, config: VisionConfig) -> list[FrameSample]:
         samples: list[FrameSample] = []
         frame_index = 0
         while True:
-            ok, frame = capture.read()
-            if not ok:
-                break
             if frame_index % stride == 0:
+                ok, frame = capture.read()
+                if not ok:
+                    break
                 timestamp_seconds = frame_index / source_fps
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                rgb = _downscale_to_rgb(frame, config.face_frame_width)
                 rgb_small = _downscale_to_rgb(frame, config.motion_frame_width)
                 samples.append(
                     FrameSample(
@@ -163,6 +164,10 @@ def _sample_frames(video_path: Path, config: VisionConfig) -> list[FrameSample]:
                         rgb_small=rgb_small,
                     )
                 )
+            else:
+                ok = capture.grab()
+                if not ok:
+                    break
             frame_index += 1
         return samples
     finally:
@@ -174,6 +179,8 @@ def _downscale_to_rgb(frame: Any, target_width: int) -> Any:
 
     height, width = frame.shape[:2]
     if width <= 0 or target_width <= 0:
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    if width <= target_width:
         return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     scale = target_width / width
     new_size = (target_width, max(int(round(height * scale)), 1))

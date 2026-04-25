@@ -85,6 +85,7 @@ def test_vision_config_defaults_match_quality_first_choices() -> None:
     assert config.sample_fps == 2.0
     assert config.scene_threshold == 27.0
     assert config.face_min_confidence == 0.5
+    assert config.face_frame_width == 960
     assert config.motion_frame_width == 256
     assert config.one_euro_min_cutoff == 1.0
     assert config.one_euro_beta == 0.1

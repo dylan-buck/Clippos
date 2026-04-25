@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_skill_surface_files_exist() -> None:
     assert (ROOT / "SKILL.md").exists()
+    assert (ROOT / "install.sh").exists()
     assert (ROOT / "commands" / "clip.md").exists()
     assert (ROOT / "commands" / "clip-config.md").exists()
     assert (ROOT / ".claude-plugin" / "plugin.json").exists()
@@ -25,6 +26,13 @@ def test_skill_instructions_reference_helper_script() -> None:
     assert "scripts/clip_skill.py" in skill
     assert "scoring-response.json" in skill
     assert "approved" in skill
+
+
+def test_readme_documents_install_one_liner() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "install.sh | bash" in readme
+    assert "CLIPPER_HARNESS" in readme
 
 
 def test_skill_is_hermes_first_with_claude_codex_fallback() -> None:

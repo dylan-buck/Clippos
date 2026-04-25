@@ -7,8 +7,6 @@ import sys
 from hashlib import sha1
 from pathlib import Path
 
-import pytest
-
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "hermes_clip.py"
 CLIP_SKILL_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "clip_skill.py"
 
@@ -376,12 +374,15 @@ def test_advance_emits_done_renders_when_render_report_exists(tmp_path: Path) ->
     payload = json.loads(result.stdout)
     assert payload["next_action"] == "done-renders"
     assert payload["workspace"] == str(workspace.resolve())
+    assert payload["clips_dir"] == str(workspace.resolve() / "renders")
+    assert "Final MP4s" in payload["summary"]
     clips = payload["clips"]
     assert len(clips) == 1
     render_path = clips[0]["renders"]["9:16"]
     assert render_path.endswith("renders/c1/clip-9x16.mp4")
     assert payload["feedback_prompt"]["clip_ids"] == ["c1"]
     assert "feedback" in payload["feedback_prompt"]["instructions"]
+    assert str(workspace.resolve() / "renders") in payload["instructions"]
 
 
 def test_hermes_clip_feedback_pass_through_records_history(tmp_path: Path) -> None:

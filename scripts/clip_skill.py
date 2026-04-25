@@ -41,7 +41,7 @@ FEEDBACK_LOG_FILENAME = "feedback-log.json"
 VALID_RATIOS = ("9:16", "1:1", "16:9")
 DEFAULT_OUTPUT_DIR = Path("~/Documents/ClipperTool").expanduser()
 DEFAULT_MAX_CANDIDATES = 12
-DEFAULT_APPROVE_TOP = 3
+DEFAULT_APPROVE_TOP = 5
 DEFAULT_MIN_SCORE = 0.70
 
 
@@ -344,8 +344,15 @@ def cmd_approve(args: argparse.Namespace) -> int:
     selected = [
         clip for clip in ranked if float(clip.get("score", 0)) >= args.min_score
     ][: args.top]
-    if not selected:
-        selected = ranked[:1]
+    if len(selected) < args.top:
+        selected_ids = {clip["clip_id"] for clip in selected}
+        for clip in ranked:
+            if clip["clip_id"] in selected_ids:
+                continue
+            selected.append(clip)
+            selected_ids.add(clip["clip_id"])
+            if len(selected) >= args.top:
+                break
     approved_ids = {clip["clip_id"] for clip in selected}
 
     for candidate in candidates:
@@ -357,6 +364,12 @@ def cmd_approve(args: argparse.Namespace) -> int:
             {
                 "review_manifest": str(args.review_manifest),
                 "approved_clip_ids": [clip["clip_id"] for clip in selected],
+                "requested_top": args.top,
+                "approved_count": len(selected),
+                "threshold": args.min_score,
+                "threshold_met_count": sum(
+                    1 for clip in selected if float(clip.get("score", 0)) >= args.min_score
+                ),
             },
             indent=2,
         )

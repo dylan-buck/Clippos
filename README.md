@@ -17,16 +17,28 @@ Designed Hermes-first. Works anywhere.
 
 ## Install
 
+Shortest path:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dylan-buck/clipping-tool/main/install.sh | bash
+```
+
+That clones the repo into `~/.local/share/clipping-tool`, creates `.venv`,
+installs the engine extras, and links the `clip` skill into Hermes, Claude
+Code, and Codex skill directories. Tune it with environment variables, e.g.
+`CLIPPER_HARNESS=hermes`, `CLIPPER_INSTALL_DIR=/path/to/clipping-tool`, or
+`CLIPPER_EXTRAS=none`.
+
 | Harness            | Install                                                                             | Command surface                          |
 | ------------------ | ----------------------------------------------------------------------------------- | ---------------------------------------- |
-| **Hermes**         | `ln -s /absolute/path/to/clipping-tool ~/.hermes/skills/clip`                       | `/clip`, `/clip config`, `/clip package` |
-| **Claude Code**    | `/plugin install ./.claude-plugin` (or copy the repo into `~/.claude/skills/clip`)  | `/clip`, `/clip-config`, `/clip-package` |
-| **Codex**          | Load `.codex-plugin/plugin.json` via your Codex plugin loader                       | `/clip`, `/clip-config`, `/clip-package` |
+| **Hermes**         | `CLIPPER_HARNESS=hermes curl -fsSL .../install.sh \| bash` or symlink manually      | `/clip`, `/clip config`, `/clip package` |
+| **Claude Code**    | `CLIPPER_HARNESS=claude curl -fsSL .../install.sh \| bash` or plugin install        | `/clip`, `/clip-config`, `/clip-package` |
+| **Codex**          | `CLIPPER_HARNESS=codex curl -fsSL .../install.sh \| bash` or plugin loader          | `/clip`, `/clip-config`, `/clip-package` |
 | **Any harness**    | Clone the repo, export `CLIPPER_ROOT=/abs/path/to/clipping-tool`, run the scripts   | `hermes_clip.py advance --source ...`    |
 
 All four install paths resolve to the same `SKILL.md` and the same helper
-scripts. After install, see the per-harness steps below, then run the
-[local dev setup](#local-dev-setup) once to get `.venv` + `ffmpeg`.
+scripts. The one-liner also does the local engine setup; manual installs can
+use the per-harness steps below and then the [local dev setup](#local-dev-setup).
 
 ### Hermes
 
@@ -108,7 +120,7 @@ the JSON, writes the scoring/packaging response when prompted, then calls
 One concrete example. You have a 45-minute podcast recording. In your agent:
 
 ```text
-/clip ~/Downloads/podcast.mp3.mp4 --ratios 9:16 --clips 3
+/clip ~/Downloads/podcast.mp3.mp4 --ratios 9:16
 ```
 
 The skill:
@@ -120,8 +132,9 @@ The skill:
 4. Asks your agent's active model to score each candidate against a fixed
    rubric (hook, shareability, standalone clarity, payoff, delivery energy,
    quotability) plus creator-profile cues from past runs.
-5. Auto-approves the top 3 above your quality threshold (or falls back to
-   the best).
+5. Auto-approves at least the top 5 candidates when the video has enough
+   valid windows, filling below the quality threshold only when needed to
+   satisfy the minimum.
 6. Virtual-camera-crops each approved clip to 9:16, burns ASS captions in
    the configured preset, renders an H.264/AAC mp4.
 7. Returns the workspace path and mp4 paths to your agent.
@@ -338,7 +351,7 @@ through the skill rather than hand-editing:
 "$CLIPPER_PYTHON" "$CLIPPER_ROOT/scripts/clip_skill.py" config-write \
   --output-dir "$HOME/Documents/ClipperTool" \
   --ratios "9:16,1:1,16:9" \
-  --approve-top 3 \
+  --approve-top 5 \
   --min-score 0.70
 ```
 
@@ -348,7 +361,7 @@ Supported keys (all optional):
 CLIPPER_OUTPUT_DIR=~/Documents/ClipperTool
 CLIPPER_RATIOS=9:16,1:1,16:9
 CLIPPER_MAX_CANDIDATES=12
-CLIPPER_APPROVE_TOP=3
+CLIPPER_APPROVE_TOP=5
 CLIPPER_MIN_SCORE=0.70
 # Optional. Default diarizer is the open-source SpeechBrain stack (no token).
 # Set CLIPPER_DIARIZER=pyannote and HF_TOKEN to opt into the pyannote upgrade.
@@ -364,16 +377,15 @@ deterministic and does not use the agent's model. Narrow the set with
 
 Pick any known-good local video 5–10 minutes long.
 
-1. **Install.** `ln -s $(pwd) ~/.hermes/skills/clip` (or the Claude
-   Code / Codex equivalent above).
+1. **Install.** `curl -fsSL https://raw.githubusercontent.com/dylan-buck/clipping-tool/main/install.sh | bash`.
 2. **Configure.** In your agent, run `/clip config --output-dir
    ~/Documents/ClipperTool` (Hermes) or `/clip-config ...` (Claude Code /
    Codex). Writes the `.env`. **No HuggingFace token needed** — diarization
    uses the open-source SpeechBrain stack by default.
-3. **Clip.** Run `/clip ~/Downloads/sample-talk.mp4 --ratios 9:16,1:1
-   --clips 2`. The agent scores each candidate with its active model,
-   the skill auto-approves the top 2 and renders them, and the agent
-   reports back the workspace + mp4 paths.
+3. **Clip.** Run `/clip ~/Downloads/sample-talk.mp4 --ratios 9:16,1:1`.
+   The agent scores each candidate with its active model, the skill
+   auto-approves the top 5 and renders them, and the agent reports back
+   the workspace, clips directory, and MP4 paths.
 4. **Package.** Run `/clip package`. Produces per-clip `package.json`
    with titles, thumbnail overlay lines, social caption, hashtags, and
    opening-line hooks.
@@ -389,8 +401,10 @@ Pick any known-good local video 5–10 minutes long.
 - Vision analysis (OpenCV frame sampling, PySceneDetect shot changes,
   RetinaFace-ResNet50 face detection via `retina-face`, torchvision RAFT
   optical flow, OneEuro trajectory smoothing) is wired and cached at
-  `<workspace>/vision.json`, keyed by adapter model. RAFT auto-selects the
-  best available PyTorch device (`mps` / `cuda` / `cpu`).
+  `<workspace>/vision.json`, keyed by adapter model. The sampler grabs past
+  unsampled frames instead of decoding every frame, keeps face frames capped
+  at 960px wide, and keeps motion frames at 256px wide. RAFT auto-selects
+  the best available PyTorch device (`mps` / `cuda` / `cpu`).
 - Scoring runs only when the surrounding harness writes a valid
   `scoring-response.json`; the clipper itself does not invoke any LLM.
 - The render stage requires `ffmpeg` on your `PATH` (libx264 + AAC + libass /

@@ -411,7 +411,7 @@ def test_generate_candidates_deduplicates_overlapping_windows(
         long_transcript_timeline,
         long_vision_timeline,
         max_candidates=10,
-        config=MiningConfig(score_floor=0.0, max_overlap_ratio=0.3),
+        config=MiningConfig(score_floor=0.0, min_candidates=0, max_overlap_ratio=0.3),
     )
 
     for index, earlier in enumerate(candidates):
@@ -508,7 +508,27 @@ def test_generate_candidates_skips_below_score_floor(
         long_transcript_timeline,
         long_vision_timeline,
         max_candidates=10,
-        config=MiningConfig(score_floor=0.99),
+        config=MiningConfig(score_floor=0.99, min_candidates=0),
     )
 
     assert strict == []
+
+
+def test_generate_candidates_fills_minimum_from_next_best_windows(
+    long_transcript_timeline, long_vision_timeline
+) -> None:
+    candidates = generate_candidates(
+        long_transcript_timeline,
+        long_vision_timeline,
+        max_candidates=5,
+        config=MiningConfig(score_floor=0.99, min_candidates=5),
+    )
+
+    assert len(candidates) == 5
+    assert [candidate.clip_id for candidate in candidates] == [
+        "clip-000",
+        "clip-001",
+        "clip-002",
+        "clip-003",
+        "clip-004",
+    ]

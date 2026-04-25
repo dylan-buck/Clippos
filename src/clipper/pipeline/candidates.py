@@ -165,6 +165,7 @@ class MiningConfig:
     weights: ScoringWeights = field(default_factory=ScoringWeights)
     penalties: Penalties = field(default_factory=Penalties)
     score_floor: float = 0.35
+    min_candidates: int = 5
     max_overlap_ratio: float = 0.5
     rambling_motion_ceiling: float = 0.25
     rambling_keyword_floor: float = 0.05
@@ -238,9 +239,19 @@ def mine_windows(
     scored: list[ScoredWindow] = [
         _score_window(window, vision_timeline.frames, cfg) for window in windows
     ]
-    scored = [sw for sw in scored if sw.score >= cfg.score_floor]
     scored.sort(key=lambda sw: sw.score, reverse=True)
-    selected = _greedy_deduplicate(scored, max_overlap_ratio=cfg.max_overlap_ratio)
+    above_floor = [sw for sw in scored if sw.score >= cfg.score_floor]
+    selected = _greedy_deduplicate(
+        above_floor, max_overlap_ratio=cfg.max_overlap_ratio
+    )
+    minimum = min(max_candidates, max(cfg.min_candidates, 0))
+    if len(selected) < minimum:
+        selected = _fill_minimum_candidates(
+            selected,
+            scored,
+            minimum=minimum,
+            max_overlap_ratio=cfg.max_overlap_ratio,
+        )
     return selected[:max_candidates]
 
 
@@ -552,6 +563,46 @@ def _greedy_deduplicate(
             continue
         kept.append(candidate)
     return kept
+
+
+def _fill_minimum_candidates(
+    selected: list[ScoredWindow],
+    scored: list[ScoredWindow],
+    *,
+    minimum: int,
+    max_overlap_ratio: float,
+) -> list[ScoredWindow]:
+    if len(selected) >= minimum:
+        return selected
+    filled = list(selected)
+    selected_keys = {
+        (window.start_seconds, window.end_seconds)
+        for window in filled
+    }
+    for candidate in scored:
+        key = (candidate.start_seconds, candidate.end_seconds)
+        if key in selected_keys:
+            continue
+        if any(
+            _overlap_ratio(candidate, existing) > max_overlap_ratio
+            for existing in filled
+        ):
+            continue
+        filled.append(candidate)
+        selected_keys.add(key)
+        if len(filled) >= minimum:
+            break
+    if len(filled) >= minimum:
+        return filled
+    for candidate in scored:
+        key = (candidate.start_seconds, candidate.end_seconds)
+        if key in selected_keys:
+            continue
+        filled.append(candidate)
+        selected_keys.add(key)
+        if len(filled) >= minimum:
+            break
+    return filled
 
 
 def _overlap_ratio(a: ScoredWindow, b: ScoredWindow) -> float:

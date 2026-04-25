@@ -28,7 +28,8 @@ Optional user intent:
 
 - Ratios: default all three (`9:16`, `1:1`, `16:9`). Respect explicit requests
   such as "vertical only", "square", "wide", or `--ratios 9:16,1:1`.
-- Clip count: default to config `CLIPPER_APPROVE_TOP` or 3.
+- Clip count: default to config `CLIPPER_APPROVE_TOP` or 5. Treat 5 as the
+  normal minimum when the video has enough valid candidate windows.
 - Quality threshold: default to config `CLIPPER_MIN_SCORE` or 0.70.
 - Output directory: default to config `CLIPPER_OUTPUT_DIR` or
   `~/Documents/ClipperTool`.
@@ -204,15 +205,16 @@ contains `workspace`, `next_action`, and—when a model handoff is required—
 ```
 
   Advance builds the review manifest, auto-approves the top-scoring clips
-  above the configured threshold (falling back to the best clip if none
-  clear it), and renders the approved clips.
+  above the configured threshold, fills from the next-best clips when needed
+  to reach the requested count, and renders the approved clips.
 
-3. When `next_action == "done-renders"`, the payload includes `clips[]` with
-   `renders` keyed by ratio and a `feedback_prompt` with the clip IDs. Return
-   the MP4 paths plus the workspace path to the user, then ask which clips
-   they kept or plan to post. Pipe the answer into `hermes_clip.py feedback`
-   (see the "Feedback Loop" section) so the creator profile keeps learning.
-   Mention if any requested ratio was skipped.
+3. When `next_action == "done-renders"`, the payload includes `clips_dir`,
+   `clips[]` with `renders` keyed by ratio, and a `feedback_prompt` with the
+   clip IDs. Return the MP4 paths plus the clips directory and workspace path
+   to the user, then ask which clips they kept or plan to post. Pipe the
+   answer into `hermes_clip.py feedback` (see the "Feedback Loop" section) so
+   the creator profile keeps learning. Mention if any requested ratio was
+   skipped.
 
 4. When `next_action == "error"`, surface the `error` string and the `stage`
    it happened in. Do not retry silently—diagnose or ask the user.
@@ -272,7 +274,7 @@ The helper stores config at `~/.config/clipper-tool/.env`:
   --output-dir "$HOME/Documents/ClipperTool" \
   --ratios "9:16,1:1,16:9" \
   --max-candidates 12 \
-  --approve-top 3 \
+  --approve-top 5 \
   --min-score 0.70
 ```
 

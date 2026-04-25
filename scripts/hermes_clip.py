@@ -202,10 +202,13 @@ def cmd_advance(args: argparse.Namespace) -> int:
         )
 
     if args.source:
+        _status(f"Preparing clip job from source: {args.source}")
         workspace, job_path = _start_new_job(args)
+        _status(f"Workspace ready: {workspace}")
     else:
         workspace = _resolve_workspace(args.workspace)
         job_path = None  # resolved lazily below when a CLI stage needs it
+        _status(f"Resuming clip job: {workspace}")
 
     def require_job_path() -> Path:
         nonlocal job_path
@@ -216,18 +219,28 @@ def cmd_advance(args: argparse.Namespace) -> int:
     state = _detect_state(workspace)
 
     if state == "needs-mine":
+        _status(
+            "Mining candidates: probing media, transcribing, diarizing, "
+            "and analyzing vision.",
+            workspace=workspace,
+        )
         _run_cli_stage(require_job_path(), "mine", workspace=workspace)
         state = _detect_state(workspace)
+        _status("Candidate mining complete.", workspace=workspace)
 
     if state == "needs-scoring":
+        _status("Waiting on harness scoring handoff.", workspace=workspace)
         _emit(_scoring_handoff(workspace, history_path=args.history))
         return 0
 
     if state == "needs-review":
+        _status("Building review manifest from model scores.", workspace=workspace)
         _run_cli_stage(require_job_path(), "review", workspace=workspace)
         state = _detect_state(workspace)
+        _status("Review manifest ready.", workspace=workspace)
 
     if state == "needs-approve":
+        _status("Approving the top clips for render.", workspace=workspace)
         _run_clip_skill(
             ["approve", str(_review_manifest_path(workspace))]
             + _approve_flags(args, workspace),
@@ -235,15 +248,25 @@ def cmd_advance(args: argparse.Namespace) -> int:
             stage="approve",
         )
         state = _detect_state(workspace)
+        _status("Clip approvals saved.", workspace=workspace)
 
     if state == "needs-render":
+        _status(
+            "Rendering approved clips with captions and crop plans.",
+            workspace=workspace,
+        )
         _run_cli_stage(require_job_path(), "render", workspace=workspace)
         state = _detect_state(workspace)
+        _status(
+            f"Render complete. Clips are in {workspace / 'renders'}.",
+            workspace=workspace,
+        )
 
     if state == "rendered":
         if not args.package:
             _emit(_done_renders_payload(workspace))
             return 0
+        _status("Preparing publish-pack handoff for rendered clips.", workspace=workspace)
         _run_clip_skill(
             ["package-prompt", str(workspace)],
             workspace=workspace,
@@ -252,16 +275,19 @@ def cmd_advance(args: argparse.Namespace) -> int:
         state = _detect_state(workspace)
 
     if state == "needs-packaging":
+        _status("Waiting on harness packaging handoff.", workspace=workspace)
         _emit(_packaging_handoff(workspace, history_path=args.history))
         return 0
 
     if state == "needs-package-save":
+        _status("Saving per-clip publish packs.", workspace=workspace)
         _run_clip_skill(
             ["package-save", str(workspace)],
             workspace=workspace,
             stage="package-save",
         )
         state = _detect_state(workspace)
+        _status("Publish packs saved.", workspace=workspace)
 
     if state == "done":
         _emit(_done_packaging_payload(workspace))
@@ -377,14 +403,19 @@ def _packaging_handoff(workspace: Path, *, history_path: Path) -> dict[str, Any]
 
 def _done_renders_payload(workspace: Path) -> dict[str, Any]:
     clips = _collect_clip_outputs(workspace)
+    clips_dir = workspace / "renders"
     return {
         "next_action": "done-renders",
         "workspace": str(workspace),
+        "clips_dir": str(clips_dir),
         "clips": clips,
+        "summary": (
+            f"Rendered {len(clips)} clip(s). Final MP4s are under {clips_dir}."
+        ),
         "feedback_prompt": {
             "instructions": (
                 "After the user reports which clips they posted vs. skipped, "
-                "record it with `hermes_clip.py feedback --workspace "
+                "record it with `hermes_clip.py feedback "
                 f"{workspace} --kept <ids> --skipped <ids>`. This appends to "
                 "the creator history so future runs score more like the "
                 "user's taste. Also offer to save any stated preferences "
@@ -393,21 +424,25 @@ def _done_renders_payload(workspace: Path) -> dict[str, Any]:
             "clip_ids": [clip.get("clip_id") for clip in clips if clip.get("clip_id")],
         },
         "instructions": (
-            "Share the rendered clip paths with the user. Run `advance "
-            "--package` on this workspace to generate publish packs. Ask the "
-            "user which clips they actually posted and record the answer via "
-            "the `feedback` subcommand."
+            f"Share the rendered clip paths with the user and mention that "
+            f"all clips live in {clips_dir}. Run `advance --package` on this "
+            "workspace to generate publish packs. Ask the user which clips "
+            "they actually posted and record the answer via the `feedback` "
+            "subcommand."
         ),
     }
 
 
 def _done_packaging_payload(workspace: Path) -> dict[str, Any]:
     clips = _collect_clip_outputs(workspace, include_packages=True)
+    clips_dir = workspace / "renders"
     return {
         "next_action": "done-package",
         "workspace": str(workspace),
+        "clips_dir": str(clips_dir),
         "clips": clips,
         "package_report": str(workspace / "package-report.json"),
+        "summary": f"Rendered clips and publish packs are under {clips_dir}.",
         "feedback_prompt": {
             "instructions": (
                 "Offer the user one last chance to record which clips they "
@@ -623,6 +658,7 @@ def _run_cli_stage(job_path: Path, stage: str, *, workspace: Path) -> None:
     """
     from collections import deque
 
+    _status(f"Starting stage `{stage}`.", workspace=workspace)
     proc = subprocess.Popen(
         [sys.executable, "-m", "clipper.cli", "run", str(job_path), "--stage", stage],
         stdout=subprocess.DEVNULL,
@@ -643,6 +679,7 @@ def _run_cli_stage(job_path: Path, stage: str, *, workspace: Path) -> None:
             or f"clipper stage {stage} exited {proc.returncode}"
         )
         raise HermesClipError(message, stage=stage, workspace=workspace)
+    _status(f"Finished stage `{stage}`.", workspace=workspace)
 
 
 # ---------- misc helpers ----------
@@ -691,6 +728,13 @@ def _which(binary: str) -> str | None:
     import shutil
 
     return shutil.which(binary)
+
+
+def _status(message: str, *, workspace: Path | None = None) -> None:
+    prefix = "[clip]"
+    if workspace is not None:
+        prefix += f" [{workspace.name}]"
+    print(f"{prefix} {message}", file=sys.stderr, flush=True)
 
 
 def _emit(payload: dict[str, Any]) -> None:

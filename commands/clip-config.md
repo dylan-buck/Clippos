@@ -1,6 +1,6 @@
 ---
 description: Configure the local clip skill environment, including output directory, ratios, clip count, score threshold, and Hugging Face token status.
-argument-hint: '[--output-dir ~/Documents/ClipperTool] [--ratios 9:16,1:1,16:9] [--clips 3] [--hf-token hf_...]'
+argument-hint: '[--output-dir ~/Documents/ClipperTool] [--ratios 9:16,1:1,16:9] [--clips 5] [--hf-token hf_...]'
 allowed-tools: [Bash, Read, Write, AskUserQuestion]
 ---
 
