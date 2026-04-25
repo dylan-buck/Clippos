@@ -91,18 +91,26 @@ attempting to resolve TF — the failure becomes local and obvious.
 `pyannote.audio>=3.1`). Pip picks newest-resolving versions, which is
 how you end up with torch 2.11 and pyannote 3.3 trying to coexist.
 
-**Fix.** Replace the engine block with the dogfood-verified pin set:
+**Fix.** Replace the engine block with the resolver-verified pin set
+(see `pyproject.toml` for the canonical version — this is a snapshot,
+not the source of truth):
 
 ```toml
 engine = [
-    # Pinned to a coexisting set, dogfood-verified 2026-04-25.
-    # Loosen these only after re-running the smoke test below.
-    "torch==2.3.1",
-    "torchaudio==2.3.1",
-    "torchvision==0.18.1",
-    "whisperx==3.3.6",          # 3.4.x adds an undeclared matplotlib dep
-    "transformers>=4.40,<5",    # 5.x removed compat whisperx 3.x relies on
-    "pyannote.audio>=3.3,<4",   # 4.x needs torch>=2.8 — incompatible cascade
+    # Pinned to a coexisting set, dogfood-verified 2026-04-25, then
+    # bumped to a uv-resolvable set on the same day (see commit 2ac9338).
+    # Original 2.3.1/3.3.6 pins worked under warmed pip but failed
+    # `uv sync` because whisperx 3.3.6's metadata declares torch>=2.5.1.
+    # The current set anchors on pyannote.audio 4.x's torch>=2.8 floor;
+    # uv lock --check passes and the lockfile shrank by ~1.4k lines as
+    # a result. Loosen these only after re-running BOTH tracks of the
+    # verification gate below.
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "torchvision==0.23.0",
+    "whisperx==3.8.5",          # earlier 3.3.x had undeclared matplotlib + bad torch metadata
+    "transformers>=4.48,<5",    # 5.x dropped compat whisperx still depends on
+    "pyannote.audio>=4.0,<5",   # the torch>=2.8 anchor for the rest of the stack
     "speechbrain>=1.0,<2",      # 0.5 vs 1.x EncoderClassifier moved (handled in code)
     "silero-vad>=5",
     "scikit-learn>=1.3",
@@ -112,13 +120,22 @@ engine = [
     "retina-face>=0.0.17",
     "tf-keras>=2.16",
     "matplotlib>=3.7",          # whisperx imports it without declaring
-    "numpy>=1.26",
+    "numpy>=2.1",
 ]
 ```
 
 Add a unit test that reads `pyproject.toml` and asserts these specific
 pins exist, so a future "let me unpin this for flexibility" diff gets
 caught at CI rather than on a user's first install.
+
+**Why two separate verification tracks (pip + uv)?** The 2.3.1/3.3.6
+pin set in this commit's first iteration shipped a real bug: it
+worked in a warmed pip environment but failed fresh `uv sync` because
+whisperx 3.3.6's metadata declared `torch>=2.5.1` even though it
+imported on 2.3.1. Pip ignored the metadata contradiction; uv didn't.
+The verification gate below requires both resolvers to pass cold so a
+recurrence of that class of bug shows up at CI rather than at the
+user's first install.
 
 ---
 
@@ -172,8 +189,18 @@ discovered. Pull latest before editing the files above.
 
 ## Verification gate
 
-Do not declare the install path shipped until this completes cold,
-without manual intervention, on a Mac with no prior clipper-tool state:
+Do not declare the install path shipped until **both** Track A and
+Track B complete cold, without manual intervention, on a Mac with no
+prior clipper-tool state. Pip and uv have different resolvers; an
+engine-extra set that resolves under one can fail under the other,
+and the original 2.3.1 torch / 3.3.6 whisperx pin set was a real
+example — it loaded fine in a warmed pip env but was unsolvable under
+fresh `uv sync` because whisperx's metadata declared
+`torch>=2.5.1` even though it imported on 2.3.1. Pip ignored the
+contradiction; uv didn't. Verifying both keeps that class of bug from
+recurring.
+
+### Track A — pip / `install.sh` (the published one-liner)
 
 ```bash
 # 1. Wipe any prior install + venv
@@ -202,63 +229,76 @@ print('engine ok:', torch.__version__, whisperx.__version__)
 # Expect: workspace ready, mine completes, scoring handoff emitted.
 ```
 
-If any step fails, the install path is not yet ready for public
-release. Add the failure mode to this doc and fix it before retrying.
+### Track B — `uv sync` (catches resolver-strict pin contradictions)
+
+`uv sync` enforces declared metadata constraints that pip will silently
+ignore. Run this from a fresh checkout in a clean tmpdir to confirm
+the engine extras resolve cleanly without tapping any pre-warmed
+caches:
+
+```bash
+# 1. Fresh checkout into a clean tmpdir (no prior .venv to warm the resolver)
+rm -rf /tmp/clipper-uv-test
+git clone https://github.com/dylan-buck/clipping-tool /tmp/clipper-uv-test
+cd /tmp/clipper-uv-test
+
+# 2. Resolve + sync engine extras with uv
+uv sync --extra engine
+
+# 3. Same engine-import smoke test as Track A
+.venv/bin/python -c "
+import whisperx, speechbrain, silero_vad, cv2, retinaface, \
+       torch, torchvision, scenedetect, matplotlib
+print('engine ok:', torch.__version__, whisperx.__version__)
+"
+
+# 4. Confirm the lockfile is consistent with pyproject.toml — uv lock
+#    --check exits non-zero if any pin moved or any transitive resolution
+#    drifted since the lockfile was last regenerated.
+uv lock --check
+```
+
+Both tracks must pass cold. If Track A passes but Track B fails, the
+pin set has metadata contradictions even when it works in pip — fix
+the pins (see F3) before merging. If Track B passes but Track A fails,
+something has diverged in install.sh's pip path; investigate before
+shipping.
+
+If any step in either track fails, the install path is not yet ready
+for public release. Add the failure mode to this doc and fix it before
+retrying.
 
 ---
 
 ## Cosmetic noise (low priority but worth fixing before public ship)
 
-### N1. Duplicate-class warnings from multiple bundled libav
+### N1. Duplicate-class warnings from multiple bundled libav — RESOLVED
 
-**Symptom.** Every clipper run on macOS prints a wall of:
+**Status.** Shipped in commit `0c66755` via Option 2: the
+`hermes_clip.py:_run_cli_stage` live-stderr passthrough now filters
+the multi-line `objc[*]: Class … is implemented in both …` block,
+preserving real diagnostic content. Test:
+`tests/scripts/test_hermes_clip.py::test_is_objc_dylib_warning_matches_full_warning_block`.
 
-```
-objc[xxxxx]: Class AVFFrameReceiver is implemented in both
-  /opt/homebrew/Cellar/ffmpeg@5/.../libavdevice.59.7.100.dylib (0x...)
-  and /Users/.../site-packages/cv2/.dylibs/libavdevice.61.3.100.dylib (0x...)
-  One of the two will be used. Which one is undefined.
-```
-
-**Root cause.** `cv2`, `av` (pyannote dep), `static-ffmpeg`, AND the
-Homebrew system `ffmpeg` each ship their own copy of libav*. macOS
-loads all of them, sees the duplicate Objective-C classes, and warns.
-
-**Impact.** Cosmetic. No functional bug, but it pollutes user-visible
-stderr and makes real errors harder to spot.
-
-**Possible fixes (pick one):**
-
-1. Set `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` in
-   `clipper/__init__.py` alongside the existing `TF_USE_LEGACY_KERAS`
-   set — silences the warnings at the cost of disabling a safety
-   check we don't actually use.
-2. Filter the `objc[*]` lines out of the live stderr passthrough in
-   `hermes_clip.py:_run_cli_stage` so users never see them.
-3. Standardize on a single ffmpeg (the vendored static-ffmpeg from
-   `4c0e090`) and make `cv2` / `av` use the same shared libs. This is
-   the right fix architecturally but requires rebuilding wheels.
-
-Option 2 is the lowest-risk and most user-visible win. Option 3 is
-the right long-term answer but costs real engineering time.
+Option 3 (standardize on a single ffmpeg) is still the right
+long-term architectural answer but requires rebuilding wheels —
+deferred.
 
 ---
 
 ## Followups (lower priority, log here so they don't get lost)
 
 - **whisperx vs transformers 5.x.** Pin `transformers<5` is a stop-gap;
-  whisperx maintenance may catch up. Re-evaluate when whisperx 3.5+
-  ships.
-- **pyannote.audio 4.x track.** Requires `torch>=2.8`, which would
-  cascade through the entire pin set. Defer until torch 2.8+ is the
-  natural floor for everything else.
+  whisperx maintenance may catch up. Re-evaluate when whisperx 4.x
+  ships or when 3.x cuts a release that drops the upper bound.
 - **Linux / Windows install paths.** All bugs above are observed on
   macOS arm64. The same pins should work on Linux x86_64 (TF wheels
-  available, torch wheels available), but neither has been
-  dogfood-verified. Add to the verification gate when a Linux dev box
-  is available.
-- **CUDA torch on Linux.** The current `torch==2.3.1` pulls the CPU
-  wheel by default on Linux. Users with NVIDIA GPUs will want
-  `torch==2.3.1+cu118` or similar. Document the override pattern
-  (`pip install torch==2.3.1+cu118 --index-url https://download.pytorch.org/whl/cu118`)
-  rather than trying to detect it in install.sh.
+  available, torch 2.8 wheels available), but neither has been
+  dogfood-verified. Add both to the verification gate when a Linux
+  dev box is available.
+- **CUDA torch on Linux.** The current `torch==2.8.0` pulls the CPU
+  wheel by default on Linux. Users with NVIDIA GPUs will want a
+  CUDA-suffixed wheel (e.g. `torch==2.8.0+cu124`). Document the
+  override pattern (`pip install torch==2.8.0+cu124 --index-url
+  https://download.pytorch.org/whl/cu124`) rather than trying to
+  detect it in install.sh.
