@@ -9,6 +9,7 @@ build/
 *.egg-info/
 .superpowers/
 artifacts/
+docs/
 .coverage
 .DS_Store
 .env
