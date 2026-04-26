@@ -13,9 +13,9 @@ All artifacts live beside the existing stage outputs under
 
 ```
 jobs/<job_id>/
-  package-request.json          # written by: clip_skill.py package-prompt
+  package-request.json          # written by: clippos_skill.py package-prompt
   package-response.json         # written by: the harness model
-  package-report.json           # written by: clip_skill.py package-save
+  package-report.json           # written by: clippos_skill.py package-save
   renders/<clip_id>/
     package.json                # per-clip publish pack (next to the MP4s)
 ```
@@ -64,10 +64,10 @@ fails with a non-zero exit rather than writing a half-baked pack.
 
 ## Producer / consumer
 
-- **Producer**: `scripts/clip_skill.py package-prompt <workspace>` loads
+- **Producer**: `scripts/clippos_skill.py package-prompt <workspace>` loads
   `review-manifest.json` + `scoring-request.json`, filters to approved
   candidates, and writes `package-request.json`.
-- **Consumer**: `scripts/clip_skill.py package-save <workspace>` validates
+- **Consumer**: `scripts/clippos_skill.py package-save <workspace>` validates
   `package-response.json`, fans per-clip `package.json` files into
   `renders/<clip_id>/`, and emits `package-report.json`.
 

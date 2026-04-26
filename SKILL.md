@@ -1,9 +1,9 @@
 ---
-name: clip
-description: Local video clipping automation for /clip requests, attached video files, video links, social clip generation, captioned shorts, crop/framing, and rendered 9:16, 1:1, or 16:9 exports. Use this skill whenever the user wants an agent to turn a video into high-potential clips, score clips with the current harness model, approve selected clips, and render final MP4 outputs.
+name: clippos
+description: Local video clipping automation for /clippos requests, attached video files, video links, social clip generation, captioned shorts, crop/framing, and rendered 9:16, 1:1, or 16:9 exports. Use this skill whenever the user wants an agent to turn a video into high-potential clips, score clips with the current harness model, approve selected clips, and render final MP4 outputs.
 ---
 
-# Clip Skill
+# Clippos Skill
 
 Use this skill to run the local clipping engine end-to-end from a video path,
 attached video file, or video link. The engine does deterministic media work
@@ -42,22 +42,22 @@ file path.
 This skill is harness-agnostic. The surface differs per harness but the
 workflow below is the same.
 
-**Hermes** exposes a single `/clip` command and treats extra text as a
+**Hermes** exposes a single `/clippos` command and treats extra text as a
 subcommand or source argument:
 
-- `/clip <video path|url>` — run the main clipping workflow.
-- `/clip config [options]` — check or write local defaults.
-- `/clip package [workspace]` — generate publish packs after rendering.
-- `/clip status` — run the preflight config check.
+- `/clippos <video path|url>` — run the main clipping workflow.
+- `/clippos config [options]` — check or write local defaults.
+- `/clippos package [workspace]` — generate publish packs after rendering.
+- `/clippos status` — run the preflight config check.
 
 **Claude Code / Codex** expose three slash commands via `commands/*.md` shims:
 
-- `/clip <video path|url>` — same main workflow.
-- `/clip-config [options]` — same as `/clip config`.
-- `/clip-package [workspace]` — same as `/clip package`.
+- `/clippos <video path|url>` — same main workflow.
+- `/clippos-config [options]` — same as `/clippos config`.
+- `/clippos-package [workspace]` — same as `/clippos package`.
 
-When this SKILL.md says "use `/clip config`" or "use `/clip package`", Claude
-Code / Codex users substitute `/clip-config` or `/clip-package`. The
+When this SKILL.md says "use `/clippos config`" or "use `/clippos package`", Claude
+Code / Codex users substitute `/clippos-config` or `/clippos-package`. The
 underlying helper scripts are identical across harnesses.
 
 ## Creator Profile (harness memory)
@@ -89,7 +89,7 @@ The skill learns from the user's own keep/skip choices. After every render,
 clips they actually posted (or plan to post) and record the answer:
 
 ```bash
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" feedback \
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clippos.py" feedback \
   "$WORKSPACE" --kept c1,c4 --skipped c2,c3 --note c2='too long'
 ```
 
@@ -98,7 +98,7 @@ Or, for structured payloads from the harness, use `--json` and pipe
 stdin.
 
 Each feedback call writes `feedback-log.json` in the workspace and appends
-rows to the global `~/.config/clippos/history.jsonl`. On the next clip
+rows to the global `~/.config/clippos/history.jsonl`. On the next clippos
 run, `advance` attaches a `creator_patterns` section to the `score` and
 `package` handoff payloads. That section contains:
 
@@ -119,7 +119,7 @@ the harness owns the memory store.
 
 ## Preflight
 
-Run this before the first clip job in a session. The prologue resolves the
+Run this before the first clippos job in a session. The prologue resolves the
 skill directory across harnesses:
 
 - **Hermes** substitutes `${HERMES_SKILL_DIR}`.
@@ -130,46 +130,46 @@ skill directory across harnesses:
 ```bash
 # Resolve CLIPPOS_ROOT — env var > harness substitution > known install
 # locations > persisted config > $PWD. The candidate must contain
-# scripts/hermes_clip.py to be accepted.
+# scripts/hermes_clippos.py to be accepted.
 # Why so many fallbacks: Hermes substitutes HERMES_SKILL_DIR reliably, but
 # Claude Code's CLAUDE_PLUGIN_ROOT does not always expand inside command
 # bash blocks (Anthropic issue #9354), so we also probe known install
 # locations (Claude Code plugin cache, Codex plugin cache, Hermes skill
 # dir) and the persisted CLIPPOS_ROOT in the config file.
 for candidate in "${CLIPPOS_ROOT:-}" "${HERMES_SKILL_DIR:-}" "${CLAUDE_PLUGIN_ROOT:-}" \
-                 "$HOME/.hermes/skills/clip" "$HOME/.claude/skills/clip" \
-                 "$HOME/.codex/skills/clip"; do
-  if [ -n "$candidate" ] && [ -f "$candidate/scripts/hermes_clip.py" ]; then
+                 "$HOME/.hermes/skills/clippos" "$HOME/.claude/skills/clippos" \
+                 "$HOME/.codex/skills/clippos"; do
+  if [ -n "$candidate" ] && [ -f "$candidate/scripts/hermes_clippos.py" ]; then
     CLIPPOS_ROOT="$candidate"; break
   fi
 done
 # Claude Code + Codex marketplace installs land under a versioned cache
-# (~/.claude/plugins/cache/<marketplace>/clip/<sha>, ~/.codex/plugins/
-# cache/<marketplace>/clip/<sha>); pick the newest one if no env var hit.
+# (~/.claude/plugins/cache/<marketplace>/clippos/<sha>, ~/.codex/plugins/
+# cache/<marketplace>/clippos/<sha>); pick the newest one if no env var hit.
 if [ -z "${CLIPPOS_ROOT:-}" ]; then
   for cache_root in "$HOME/.claude/plugins/cache" "$HOME/.codex/plugins/cache"; do
     [ -d "$cache_root" ] || continue
-    candidate="$(find "$cache_root" -mindepth 3 -maxdepth 3 -type d -name "clip" -path "*/clip" 2>/dev/null | head -1)"
-    [ -n "$candidate" ] && [ -f "$candidate/scripts/hermes_clip.py" ] && \
+    candidate="$(find "$cache_root" -mindepth 3 -maxdepth 3 -type d -name "clippos" -path "*/clippos" 2>/dev/null | head -1)"
+    [ -n "$candidate" ] && [ -f "$candidate/scripts/hermes_clippos.py" ] && \
       { CLIPPOS_ROOT="$candidate"; break; }
   done
 fi
 if [ -z "${CLIPPOS_ROOT:-}" ] && [ -f "$HOME/.config/clippos/.env" ]; then
   CLIPPOS_ROOT="$(awk -F= '/^CLIPPOS_ROOT=/{gsub(/^["'"'"']|["'"'"']$/,"",$2); print $2; exit}' "$HOME/.config/clippos/.env")"
 fi
-[ -n "${CLIPPOS_ROOT:-}" ] && [ -f "$CLIPPOS_ROOT/scripts/hermes_clip.py" ] || \
-  { [ -f "$PWD/scripts/hermes_clip.py" ] && CLIPPOS_ROOT="$PWD"; }
+[ -n "${CLIPPOS_ROOT:-}" ] && [ -f "$CLIPPOS_ROOT/scripts/hermes_clippos.py" ] || \
+  { [ -f "$PWD/scripts/hermes_clippos.py" ] && CLIPPOS_ROOT="$PWD"; }
 # v1.x bootstrap: native plugin managers (Claude Code's /plugin, Codex's
 # `codex marketplace add`) clone the repo but do not run pip — there is
 # no PostInstall hook for engine extras. The bootstrap script creates a
 # .venv at the install root and pip-installs the engine extras (~5 min,
 # ~700 MB of wheels). Idempotent — no-op once the .venv exists. Hermes
 # users run this script directly post-clone, so they don't pay this
-# cost on first /clip.
+# cost on first /clippos.
 [ -d "$CLIPPOS_ROOT/.venv" ] || bash "$CLIPPOS_ROOT/scripts/bootstrap-venv.sh"
 CLIPPOS_PYTHON="${CLIPPOS_PYTHON:-$CLIPPOS_ROOT/.venv/bin/python}"
 [ -x "$CLIPPOS_PYTHON" ] || CLIPPOS_PYTHON="$(command -v python3)"
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-check
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clippos_skill.py" config-check
 ```
 
 If discovery fails (no env var, no install paths, no persisted config,
@@ -177,7 +177,7 @@ not in the repo), persist the path once and every future invocation
 resolves cleanly:
 
 ```bash
-"$CLIPPOS_ROOT/.venv/bin/python" "$CLIPPOS_ROOT/scripts/clip_skill.py" \
+"$CLIPPOS_ROOT/.venv/bin/python" "$CLIPPOS_ROOT/scripts/clippos_skill.py" \
   config-write --root "$CLIPPOS_ROOT"
 ```
 
@@ -213,16 +213,16 @@ resolved with the same four-line prologue.
 
 ## Main Workflow (agent loop)
 
-Prefer the `scripts/hermes_clip.py` driver (named for its Hermes-first design,
+Prefer the `scripts/hermes_clippos.py` driver (named for its Hermes-first design,
 but harness-agnostic — it works anywhere a Python script can shell out + read
 JSON). It advances the pipeline state machine and always prints a single JSON
-payload describing the next action, so each `/clip` turn is exactly one tool
+payload describing the next action, so each `/clippos` turn is exactly one tool
 call plus (when needed) one model handoff.
 
 1. Start or resume a job:
 
 ```bash
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" advance --source "$SOURCE"
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clippos.py" advance --source "$SOURCE"
 ```
 
 Use `--ratios 9:16,1:1` or `--clips 2` only when the user asks. The payload
@@ -272,7 +272,7 @@ in the job).
 - Re-run advance on the workspace:
 
 ```bash
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE"
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clippos.py" advance --workspace "$WORKSPACE"
 ```
 
   Advance builds the review manifest, auto-approves the top-scoring clips
@@ -283,7 +283,7 @@ in the job).
    `clips[]` with `renders` keyed by ratio, and a `feedback_prompt` with the
    clip IDs. Return the MP4 paths plus the clips directory and workspace path
    to the user, then ask which clips they kept or plan to post. Pipe the
-   answer into `hermes_clip.py feedback` (see the "Feedback Loop" section) so
+   answer into `hermes_clippos.py feedback` (see the "Feedback Loop" section) so
    the creator profile keeps learning. Mention if any requested ratio was
    skipped.
 
@@ -292,24 +292,24 @@ in the job).
 
 ### Deterministic fallback (raw primitives)
 
-If the harness cannot use `hermes_clip.py`, the older step-by-step flow still
+If the harness cannot use `hermes_clippos.py`, the older step-by-step flow still
 works. Run `prepare` → `clippos.cli run --stage mine` → score → `--stage
-review` → `clip_skill.py approve` → `--stage render` → `clip_skill.py outputs`.
-See git history for the long form; `hermes_clip.py` encodes the same sequence.
+review` → `clippos_skill.py approve` → `--stage render` → `clippos_skill.py outputs`.
+See git history for the long form; `hermes_clippos.py` encodes the same sequence.
 
 ## Packaging Workflow
 
-Use `/clip package` after a render finishes to produce per-clip publish packs
+Use `/clippos package` after a render finishes to produce per-clip publish packs
 (5+ title candidates, thumbnail overlay lines, a social caption, hashtags, and
-opening-line hooks). The `hermes_clip.py` driver handles workspace resolution
+opening-line hooks). The `hermes_clippos.py` driver handles workspace resolution
 and packaging handoff; it uses the newest job workspace when none is given.
 
 1. Resume the latest workspace (or pass one explicitly) and advance through
    packaging:
 
 ```bash
-WORKSPACE=$("$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" latest-workspace --plain)
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE" --package
+WORKSPACE=$("$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clippos.py" latest-workspace --plain)
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clippos.py" advance --workspace "$WORKSPACE" --package
 ```
 
 2. When `next_action == "package"`:
@@ -327,7 +327,7 @@ WORKSPACE=$("$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" latest-work
 - Re-run advance:
 
 ```bash
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" advance --workspace "$WORKSPACE"
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clippos.py" advance --workspace "$WORKSPACE"
 ```
 
 3. When `next_action == "done-package"`, the payload includes `clips[]` with
@@ -337,11 +337,11 @@ WORKSPACE=$("$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/hermes_clip.py" latest-work
 
 ## Config Workflow
 
-Use `/clip config` when setup is missing or the user wants defaults changed.
+Use `/clippos config` when setup is missing or the user wants defaults changed.
 The helper stores config at `~/.config/clippos/.env`:
 
 ```bash
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-write \
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clippos_skill.py" config-write \
   --output-dir "$HOME/Documents/Clippos" \
   --ratios "9:16,1:1,16:9" \
   --max-candidates 12 \
@@ -361,5 +361,5 @@ End the response with:
 - Rendered MP4 paths for each ratio.
 - Any setup or render failures with the exact command that failed.
 
-Do not call the job production-ready until a real-video `/clip` run has
+Do not call the job production-ready until a real-video `/clippos` run has
 completed on the user's machine with engine extras and `HF_TOKEN` configured.

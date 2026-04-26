@@ -43,14 +43,14 @@ The CLI currently validates a JSON job payload with this contract before invokin
 Workspace artifacts all live under `<output_dir>/jobs/<job_id>/`:
 `scoring-request.json`, `scoring-response.json`, `scoring-cache/*.json`,
 `review-manifest.json`, `renders/<clip_id>/*`, `render-report.json`, and —
-once the `/clip-package` flow runs — `package-request.json`,
+once the `/clippos-package` flow runs — `package-request.json`,
 `package-response.json`, `package-report.json`, plus per-clip
 `renders/<clip_id>/package.json`. See
 [scoring-handoff.md](scoring-handoff.md) for the scoring handoff contract,
 [render-manifest.md](render-manifest.md) for the render stage contract, and
 [package-handoff.md](package-handoff.md) for the packaging handoff contract.
 
-The agent skill layer uses this same contract. `/clip` defaults to all three
+The agent skill layer uses this same contract. `/clippos` defaults to all three
 ratios because rendering does not use model calls, but narrower user requests
 are written into `output_profile.ratios` before render.
 

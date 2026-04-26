@@ -3,20 +3,20 @@
 #
 # Idempotent first-run setup: create a .venv at the Clippos install root
 # and pip-install the engine extras. Called automatically by the SKILL
-# prologue on the first /clip invocation when no .venv exists.
+# prologue on the first /clippos invocation when no .venv exists.
 #
 # Why this is needed: native plugin managers (Claude Code's
 # `/plugin marketplace add`, Codex's equivalent) clone the repo but do
 # not run pip — there's no install hook to declare the heavy ML deps.
-# Without this, the first /clip call would fail with engine_imports
+# Without this, the first /clippos call would fail with engine_imports
 # missing (whisperx, torch, retina-face, etc.). This script closes that
 # gap with one self-contained step.
 #
 # Hermes's HERMES_SETUP.md calls this script directly post-clone, so
-# Hermes users don't pay the cost on first /clip invocation.
+# Hermes users don't pay the cost on first /clippos invocation.
 #
 # Cost: ~5 min for pip downloads (~700 MB of wheels). Models themselves
-# (~3.5 GB Whisper + RetinaFace + RAFT) download lazily on first /clip.
+# (~3.5 GB Whisper + RetinaFace + RAFT) download lazily on first /clippos.
 
 set -euo pipefail
 
@@ -69,7 +69,7 @@ PY="$(find_python)"
 
 printf '[clippos] First-run setup: creating .venv at %s\n' "$CLIPPOS_ROOT/.venv" >&2
 printf '[clippos] This downloads ~700 MB of pip wheels and takes 3-7 min.\n' >&2
-printf '[clippos] Subsequent /clip calls reuse the cached .venv.\n' >&2
+printf '[clippos] Subsequent /clippos calls reuse the cached .venv.\n' >&2
 
 "$PY" -m venv "$CLIPPOS_ROOT/.venv"
 "$CLIPPOS_ROOT/.venv/bin/python" -m pip install --upgrade --quiet pip setuptools wheel
@@ -78,9 +78,9 @@ printf '[clippos] Subsequent /clip calls reuse the cached .venv.\n' >&2
 # Persist CLIPPOS_ROOT so the SKILL prologue can resolve it across
 # harnesses without relying on env-var substitution that some harnesses
 # (Claude Code, Anthropic issue #9354) don't always perform.
-"$CLIPPOS_ROOT/.venv/bin/python" "$CLIPPOS_ROOT/scripts/clip_skill.py" \
+"$CLIPPOS_ROOT/.venv/bin/python" "$CLIPPOS_ROOT/scripts/clippos_skill.py" \
   config-write --root "$CLIPPOS_ROOT"
 
 printf '[clippos] Setup complete. Engine extras installed.\n' >&2
-printf '[clippos] First /clip will additionally download ~3.5 GB of model weights\n' >&2
+printf '[clippos] First /clippos will additionally download ~3.5 GB of model weights\n' >&2
 printf '[clippos] (Whisper large-v3, SpeechBrain ECAPA, RetinaFace, RAFT) on first use.\n' >&2

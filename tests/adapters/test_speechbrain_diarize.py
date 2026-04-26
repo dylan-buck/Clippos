@@ -298,7 +298,7 @@ def test_diarize_audio_uses_default_cache_dir_when_none_configured(
 ) -> None:
     """The shared cache lives at ~/.cache/clippos/speechbrain by
     default so first-run model weights aren't strewn under whatever CWD the
-    user happened to be in when they typed `/clip`."""
+    user happened to be in when they typed `/clippos`."""
     fake_default = tmp_path / "default-cache"
     monkeypatch.setattr(sd, "DEFAULT_CACHE_DIR", fake_default)
     audio = np.zeros(sd.DEFAULT_SAMPLE_RATE * 6, dtype="float32")

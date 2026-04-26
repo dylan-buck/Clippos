@@ -52,8 +52,8 @@ for what landed versus what was planned.
   local suite does not require a Hugging Face token or heavyweight model
   downloads.
 - **M1.8 agent skill packaging.** The repo now has a root `SKILL.md`,
-  `/clip` and `/clip-config` command shims, plugin metadata, and
-  `scripts/clip_skill.py` for config checks, source preparation, approval, and
+  `/clippos` and `/clippos-config` command shims, plugin metadata, and
+  `scripts/clippos_skill.py` for config checks, source preparation, approval, and
   output reporting. The render stage now honors `output_profile.ratios`, so the
   skill can default to all three formats while respecting narrower user
   requests.

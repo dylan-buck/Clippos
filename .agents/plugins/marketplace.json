@@ -8,7 +8,7 @@
   },
   "plugins": [
     {
-      "name": "clip",
+      "name": "clippos",
       "source": {
         "source": "local",
         "path": "./"

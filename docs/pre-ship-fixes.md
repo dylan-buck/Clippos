@@ -1,7 +1,7 @@
 # Pre-ship fixes
 
 Blockers that must land before the `curl | bash` install path is exposed
-publicly. Surfaced during the 2026-04-25 dogfood, where running `/clip`
+publicly. Surfaced during the 2026-04-25 dogfood, where running `/clippos`
 on a real YouTube video required ~90 minutes of manual dep-conflict
 debugging in a parallel Claude Code session before mining could even
 start. None of these are bugs in the engine code itself — they are all
@@ -20,8 +20,8 @@ verification gate at the bottom passes cold on a fresh venv.
 **Status.** install.sh was deleted in favor of native plugin
 marketplaces per harness (see [README install matrix](../README.md#install)).
 The Python version check logic moved to `scripts/bootstrap-venv.sh`,
-which every install path invokes (Claude Code lazy on first /clip,
-Codex lazy on first /clip, Hermes explicitly post-clone). Verified at
+which every install path invokes (Claude Code lazy on first /clippos,
+Codex lazy on first /clippos, Hermes explicitly post-clone). Verified at
 `scripts/bootstrap-venv.sh:18-54` — probes each candidate Python with
 a `(3,12) <= sys.version_info < (3,13)` check and exits with brew /
 apt / pacman hints when nothing qualifies.
@@ -137,25 +137,25 @@ catching it.
 The following landed in this session before the dep conflicts were
 discovered. Pull latest before editing the files above.
 
-- `scripts/clip_skill.py` — new `probe_engine_imports()` plus a
+- `scripts/clippos_skill.py` — new `probe_engine_imports()` plus a
   top-level `ready` field on `config-check`. The `engine_imports`
   block lists every required module's import status with the active
   interpreter path, so a "ready" report now actually means "runnable
   end-to-end". Closes the gap that let the dogfood proceed past
   preflight on a venv missing whisperx.
-- `scripts/hermes_clip.py` — `preflight` propagates engine misses
+- `scripts/hermes_clippos.py` — `preflight` propagates engine misses
   into the top-level `missing` list as `engine:<module>` entries with
   an instruction message that names the active interpreter.
-- `commands/clip.md`, `commands/clip-config.md`, `commands/clip-package.md`,
+- `commands/clippos.md`, `commands/clippos-config.md`, `commands/clippos-package.md`,
   `SKILL.md` — replaced the brittle
   `${CLIPPOS_ROOT:-${HERMES_SKILL_DIR:-${CLAUDE_PLUGIN_ROOT:-$PWD}}}`
   prologue with a robust resolution chain that tries env vars →
   install.sh symlinks → install dir → persisted `~/.config/clippos/.env`
   → `$PWD`. Each candidate is validated by checking for
-  `scripts/hermes_clip.py`. Resolves the Claude Code
+  `scripts/hermes_clippos.py`. Resolves the Claude Code
   `${CLAUDE_PLUGIN_ROOT}` expansion bug (Anthropic issue #9354) in
   the wild.
-- `scripts/clip_skill.py config-write --root <path>` — new flag that
+- `scripts/clippos_skill.py config-write --root <path>` — new flag that
   persists `CLIPPOS_ROOT` to the config file with validation.
   `scripts/bootstrap-venv.sh` calls it post-install as its last step.
 - 370 tests passing, ruff clean.
@@ -181,31 +181,31 @@ recurring.
 # 1. Wipe any prior install + venv (Hermes, Claude, Codex caches; legacy
 #    install dir from when there was a top-level install.sh).
 rm -rf ~/.local/share/clippos /tmp/clippos-test-venv \
-       ~/.hermes/skills/clip \
+       ~/.hermes/skills/clippos \
        ~/.claude/plugins/cache/Clippos \
        ~/.codex/plugins/cache/Clippos \
        ~/.config/clippos
 
 # 2. Simulate the Hermes install path (the most explicit; Claude / Codex
 #    marketplace adds clone into versioned cache dirs we don't control).
-git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clip
-bash ~/.hermes/skills/clip/scripts/bootstrap-venv.sh
+git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clippos
+bash ~/.hermes/skills/clippos/scripts/bootstrap-venv.sh
 
 # 3. Smoke-test engine imports without touching code
-~/.hermes/skills/clip/.venv/bin/python -c "
+~/.hermes/skills/clippos/.venv/bin/python -c "
 import whisperx, speechbrain, silero_vad, cv2, retinaface, \
        torch, torchvision, scenedetect, matplotlib
 print('engine ok:', torch.__version__, whisperx.__version__)
 "
 
 # 4. Run preflight via the published skill path
-~/.hermes/skills/clip/.venv/bin/python \
-  ~/.hermes/skills/clip/scripts/hermes_clip.py preflight
+~/.hermes/skills/clippos/.venv/bin/python \
+  ~/.hermes/skills/clippos/scripts/hermes_clippos.py preflight
 # Expect ready=true, no engine:* entries in `missing`.
 
-# 5. Real /clip end-to-end on a short test video (5–10 min)
-~/.hermes/skills/clip/.venv/bin/python \
-  ~/.hermes/skills/clip/scripts/hermes_clip.py advance \
+# 5. Real /clippos end-to-end on a short test video (5–10 min)
+~/.hermes/skills/clippos/.venv/bin/python \
+  ~/.hermes/skills/clippos/scripts/hermes_clippos.py advance \
   --source /absolute/path/to/short-test.mp4
 # Expect: workspace ready, mine completes, scoring handoff emitted.
 ```
@@ -256,10 +256,10 @@ retrying.
 ### N1. Duplicate-class warnings from multiple bundled libav — RESOLVED
 
 **Status.** Shipped in commit `0c66755` via Option 2: the
-`hermes_clip.py:_run_cli_stage` live-stderr passthrough now filters
+`hermes_clippos.py:_run_cli_stage` live-stderr passthrough now filters
 the multi-line `objc[*]: Class … is implemented in both …` block,
 preserving real diagnostic content. Test:
-`tests/scripts/test_hermes_clip.py::test_is_objc_dylib_warning_matches_full_warning_block`.
+`tests/scripts/test_hermes_clippos.py::test_is_objc_dylib_warning_matches_full_warning_block`.
 
 Option 3 (standardize on a single ffmpeg) is still the right
 long-term architectural answer but requires rebuilding wheels —

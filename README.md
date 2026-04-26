@@ -1,7 +1,7 @@
 # Clippos
 
 Turn any long-form video into captioned, viral-ready social clips with a
-single `/clip` call in your agent. Ships as a skill for
+single `/clippos` call in your agent. Ships as a skill for
 [Hermes](https://hermes-agent.nousresearch.com), Claude Code, and Codex — and
 runs in any harness that can execute a Python script and read JSON.
 
@@ -17,7 +17,7 @@ Designed Hermes-first. Works anywhere.
 
 ## Install
 
-> **Heads up:** first `/clip` run downloads ~3.5 GB of model weights and
+> **Heads up:** first `/clippos` run downloads ~3.5 GB of model weights and
 > the pipeline is compute-heavy. Read [Hardware requirements](#hardware-requirements)
 > before installing — 16 GB RAM is the practical floor.
 
@@ -27,10 +27,10 @@ canonical.
 
 | Harness         | Install command                                               | Command surface                          |
 | --------------- | ------------------------------------------------------------- | ---------------------------------------- |
-| **Claude Code** | `/plugin marketplace add dylan-buck/Clippos`                  | `/clip:clip`, `/clip:clip-config`, `/clip:clip-package` |
-| **Codex**       | `codex marketplace add dylan-buck/Clippos`                    | `/clip`, `/clip-config`, `/clip-package` |
-| **Hermes**      | `git clone … ~/.hermes/skills/clip && bash …/bootstrap-venv.sh` | `/clip`, `/clip config`, `/clip package` |
-| **Any harness** | Clone, run `bootstrap-venv.sh`, drive `scripts/hermes_clip.py`    | `hermes_clip.py advance --source ...`    |
+| **Claude Code** | `/plugin marketplace add dylan-buck/Clippos`                  | `/clippos:clippos`, `/clippos:clippos-config`, `/clippos:clippos-package` |
+| **Codex**       | `codex marketplace add dylan-buck/Clippos`                    | `/clippos`, `/clippos-config`, `/clippos-package` |
+| **Hermes**      | `git clone … ~/.hermes/skills/clippos && bash …/bootstrap-venv.sh` | `/clippos`, `/clippos config`, `/clippos package` |
+| **Any harness** | Clone, run `bootstrap-venv.sh`, drive `scripts/hermes_clippos.py`    | `hermes_clippos.py advance --source ...`    |
 
 All four paths resolve to the same `SKILL.md` and the same helper
 scripts.
@@ -41,19 +41,19 @@ From inside Claude Code:
 
 ```text
 /plugin marketplace add dylan-buck/Clippos
-/plugin install clip@Clippos
+/plugin install clippos@Clippos
 ```
 
 The marketplace registers the repo and Claude Code clones it into
-`~/.claude/plugins/cache/Clippos/clip/<sha>/`. The first `/clip:clip`
+`~/.claude/plugins/cache/Clippos/clippos/<sha>/`. The first `/clippos:clippos`
 invocation auto-runs `scripts/bootstrap-venv.sh` once to create the
 `.venv` and pip-install the engine extras (~5 min, ~700 MB of wheels).
 Subsequent calls skip the bootstrap.
 
 ```text
-/clip:clip /absolute/path/video.mp4
-/clip:clip-config --output-dir ~/Documents/Clippos
-/clip:clip-package
+/clippos:clippos /absolute/path/video.mp4
+/clippos:clippos-config --output-dir ~/Documents/Clippos
+/clippos:clippos-package
 ```
 
 ### Codex
@@ -64,18 +64,18 @@ From inside the Codex CLI:
 codex marketplace add dylan-buck/Clippos
 ```
 
-Then enable the `clip` plugin from the marketplace via the Codex TUI
+Then enable the `clippos` plugin from the marketplace via the Codex TUI
 (`/plugins`) or by adding to `~/.codex/config.toml`:
 
 ```toml
-[plugins."clip@Clippos"]
+[plugins."clippos@Clippos"]
 enabled = true
 ```
 
-Codex clones the repo into `~/.codex/plugins/cache/Clippos/clip/<sha>/`
+Codex clones the repo into `~/.codex/plugins/cache/Clippos/clippos/<sha>/`
 and the same first-run bootstrap behavior applies — `bootstrap-venv.sh`
-runs on first `/clip` to create the `.venv`. Slash commands are
-identical to Claude Code (without the `clip:` namespace prefix).
+runs on first `/clippos` to create the `.venv`. Slash commands are
+identical to Claude Code (without the `clippos:` namespace prefix).
 
 ### Hermes
 
@@ -84,20 +84,20 @@ yet. Install directly into your Hermes skill directory and run the
 bootstrap script:
 
 ```bash
-git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clip
-bash ~/.hermes/skills/clip/scripts/bootstrap-venv.sh
+git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clippos
+bash ~/.hermes/skills/clippos/scripts/bootstrap-venv.sh
 ```
 
-Start a fresh Hermes session and the `/clip` skill appears
+Start a fresh Hermes session and the `/clippos` skill appears
 automatically. See [HERMES_SETUP.md](HERMES_SETUP.md) for the full
 guide (prerequisites, troubleshooting, update flow). Typical Hermes
 usage:
 
 ```text
-/clip /absolute/path/video.mp4
-/clip https://cdn.discordapp.com/attachments/... --ratios 9:16,1:1 --clips 2
-/clip config --output-dir ~/Documents/Clippos
-/clip package
+/clippos /absolute/path/video.mp4
+/clippos https://cdn.discordapp.com/attachments/... --ratios 9:16,1:1 --clips 2
+/clippos config --output-dir ~/Documents/Clippos
+/clippos package
 ```
 
 Attachment URLs dropped into Discord/Telegram are detected and
@@ -115,11 +115,11 @@ bash Clippos/scripts/bootstrap-venv.sh
 export CLIPPOS_ROOT="$(pwd)/Clippos"
 ```
 
-Then drive the pipeline with `hermes_clip.py` (the harness-agnostic
+Then drive the pipeline with `hermes_clippos.py` (the harness-agnostic
 state-machine driver):
 
 ```bash
-"$CLIPPOS_ROOT/.venv/bin/python" "$CLIPPOS_ROOT/scripts/hermes_clip.py" \
+"$CLIPPOS_ROOT/.venv/bin/python" "$CLIPPOS_ROOT/scripts/hermes_clippos.py" \
   advance --source /absolute/path/video.mp4
 ```
 
@@ -178,23 +178,23 @@ Pick any known-good local video 5–10 minutes long.
    [Install matrix](#install) above. Claude Code and Codex install via
    their native marketplace (`/plugin marketplace add` and
    `codex marketplace add` respectively) and auto-bootstrap the venv
-   on the first `/clip` call. Hermes is a `git clone` + one bash
+   on the first `/clippos` call. Hermes is a `git clone` + one bash
    script.
-2. **Configure** (optional). In your agent, run `/clip config --output-dir
-   ~/Documents/Clippos` (Hermes) or `/clip-config ...` (Claude Code /
+2. **Configure** (optional). In your agent, run `/clippos config --output-dir
+   ~/Documents/Clippos` (Hermes) or `/clippos-config ...` (Claude Code /
    Codex). Writes the `.env`. **No HuggingFace token needed** —
    diarization uses the open-source SpeechBrain stack by default.
-3. **Clip.** Run `/clip ~/Downloads/sample-talk.mp4 --ratios 9:16,1:1`.
+3. **Clip.** Run `/clippos ~/Downloads/sample-talk.mp4 --ratios 9:16,1:1`.
    The skill mines candidates locally, the agent first authors a video
    brief from the transcript (one model handoff), then scores each
    candidate, the skill auto-approves the top 5 + renders, and the
    agent reports back the workspace, clips directory, and MP4 paths.
-4. **Package.** Run `/clip package`. Produces per-clip `package.json`
+4. **Package.** Run `/clippos package`. Produces per-clip `package.json`
    with titles, thumbnail overlay lines, social caption, hashtags, and
    opening-line hooks.
 5. **Learn.** Tell the agent which clips you actually posted:
-   `hermes_clip.py feedback <workspace> --kept c1 --skipped c2 --note
-   c2='too long'`. The next `/clip` run will surface patterns in the
+   `hermes_clippos.py feedback <workspace> --kept c1 --skipped c2 --note
+   c2='too long'`. The next `/clippos` run will surface patterns in the
    scoring handoff.
 
 ## Configuration
@@ -203,7 +203,7 @@ Skill configuration lives at `~/.config/clippos/.env`. Write it
 through the skill rather than hand-editing:
 
 ```bash
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-write \
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clippos_skill.py" config-write \
   --output-dir "$HOME/Documents/Clippos" \
   --ratios "9:16,1:1,16:9" \
   --approve-top 5 \
@@ -264,19 +264,19 @@ Per-job workspace layout:
     ├── <clip_id>-16x9.mp4
     ├── <clip_id>-*.ass          # ASS subtitle sidecars
     ├── render-manifest.json
-    └── package.json             # /clip-package output (titles, hashtags, etc.)
+    └── package.json             # /clippos-package output (titles, hashtags, etc.)
 ```
 
 The MP4s are what you upload. The JSON files are the workspace's audit
 trail — they let you re-run any stage without re-mining and they're how
-the harness model picks up where it left off across `/clip` invocations.
+the harness model picks up where it left off across `/clippos` invocations.
 
 ## What it does
 
 One concrete example. You have a 45-minute podcast recording. In your agent:
 
 ```text
-/clip ~/Downloads/podcast.mp3.mp4 --ratios 9:16
+/clippos ~/Downloads/podcast.mp3.mp4 --ratios 9:16
 ```
 
 The skill:
@@ -305,7 +305,7 @@ The skill:
    the configured preset, renders an H.264/AAC mp4.
 8. Returns the workspace path and mp4 paths to your agent.
 
-Optionally follow up with `/clip package` to generate title candidates,
+Optionally follow up with `/clippos package` to generate title candidates,
 thumbnail overlay lines, social captions, hashtags, and opening-line hooks
 for every rendered clip.
 
@@ -318,8 +318,8 @@ for every rendered clip.
   finished mp4s in the same thread. Discord CDN and Telegram bot-file URLs
   are detected automatically.
 - **Self-improving creator profile.** After each run, record which clips
-  you posted vs. skipped (`/clip feedback` or programmatically via
-  `hermes_clip.py feedback`). The skill aggregates patterns across runs
+  you posted vs. skipped (`/clippos feedback` or programmatically via
+  `hermes_clippos.py feedback`). The skill aggregates patterns across runs
   (length bias, spike-category preference, ratio preference, score
   disagreement) with confidence tiers and surfaces them to the next
   scoring handoff. Rules can be promoted into the harness's memory.
@@ -347,7 +347,7 @@ the workspace; deterministic stages run automatically, model-handoff
 stages pause for a response file:
 
 ```text
-/clip video.mp4
+/clippos video.mp4
     │
     ├─→ mine        → scoring-request.json + brief-request.json
     │                 (transcribes, diarizes, analyzes vision, mines candidates)
@@ -357,7 +357,7 @@ stages pause for a response file:
     ├─→ review      → review-manifest.json (auto-approves top N)
     ├─→ render      → render-report.json + renders/<clip>/<clip>-{9x16,1x1,16x9}.mp4
     │
-    └─ /clip package
+    └─ /clippos package
         ├─→ package-prompt → package-request.json (with brief embedded)
         │                    (agent packages → package-response.json)
         └─→ package-save    → renders/<clip>/package.json
@@ -449,7 +449,7 @@ Minimal job file:
   candidates are approved.
 - `auto` — runs `mine`, then `brief` (when enabled and the response is
   available), then `review`. **Does not chain into render** — that
-  must be invoked explicitly. The Hermes `/clip` flow handles
+  must be invoked explicitly. The Hermes `/clippos` flow handles
   approve + render automatically; the raw CLI stops at review by
   design.
 
@@ -460,9 +460,9 @@ for the full rubric, schema, and caching rules.
 
 - **`--stage auto` does not chain into render.** The CLI's `auto` stage
   runs mine → brief → score → review and stops; render must be invoked
-  explicitly. The Hermes `/clip` flow auto-approves + renders past
+  explicitly. The Hermes `/clippos` flow auto-approves + renders past
   review automatically, but raw-CLI users need an extra step.
-- **Auto-approval is the default in the agent flow.** The `/clip` skill
+- **Auto-approval is the default in the agent flow.** The `/clippos` skill
   auto-approves the top N scoring candidates above `min_score`, with
   backfill from below-threshold windows when fewer than N qualify.
   There's no required human-review pause in the agent loop. To gate on
@@ -494,7 +494,7 @@ for the full rubric, schema, and caching rules.
   same path reuses the same workspace (good for resume). If you edit
   the source video at the same path, manually delete the workspace
   under `<output_dir>/jobs/<job_id>/` to force a fresh mine. There's
-  no batch mode — invoke `/clip` (or `hermes_clip.py advance --source
+  no batch mode — invoke `/clippos` (or `hermes_clippos.py advance --source
   ...`) in a loop for multiple videos.
 - **Brief stage adds one model handoff per video.** Disable via
   `output_profile.video_brief: false` in the job for the legacy

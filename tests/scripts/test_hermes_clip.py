@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "hermes_clip.py"
-CLIP_SKILL_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "clip_skill.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "hermes_clippos.py"
+CLIP_SKILL_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "clippos_skill.py"
 
 
 def _load_hermes_module():

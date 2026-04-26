@@ -4,7 +4,7 @@
 This script drives the Clippos pipeline as a resumable state machine and
 emits a single structured JSON payload on every call, so any agent harness
 — Hermes, Claude Code, Codex, or a bespoke one — can advance the flow with
-one tool call per step. It was designed around Hermes's single-`/clip`-
+one tool call per step. It was designed around Hermes's single-`/clippos`-
 command shape but contains no Hermes-specific dependencies: every subcommand
 is just Python + file I/O.
 
@@ -18,7 +18,7 @@ Subcommands:
 - ``feedback``          — record kept/skipped outcomes into the creator
                           history (drives the self-improving profile).
 
-The helper delegates to ``scripts/clip_skill.py`` and ``python -m clippos.cli``
+The helper delegates to ``scripts/clippos_skill.py`` and ``python -m clippos.cli``
 rather than re-implementing orchestration, so existing tests stay authoritative.
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-CLIP_SKILL_SCRIPT = REPO_ROOT / "scripts" / "clip_skill.py"
+CLIP_SKILL_SCRIPT = REPO_ROOT / "scripts" / "clippos_skill.py"
 
 
 def _load_clip_skill():
@@ -185,7 +185,7 @@ def cmd_preflight(args: argparse.Namespace) -> int:
     }
     if not ready:
         payload["instructions"] = (
-            "Run `/clip config` to fix missing system requirements. The "
+            "Run `/clippos config` to fix missing system requirements. The "
             "render stage needs FFmpeg with libass — install the engine "
             "extras (`pip install -e '.[engine]'`) and the vendored "
             "static-ffmpeg binary will be used automatically. If "
@@ -484,7 +484,7 @@ def _done_renders_payload(workspace: Path) -> dict[str, Any]:
         "feedback_prompt": {
             "instructions": (
                 "After the user reports which clips they posted vs. skipped, "
-                "record it with `hermes_clip.py feedback "
+                "record it with `hermes_clippos.py feedback "
                 f"{workspace} --kept <ids> --skipped <ids>`. This appends to "
                 "the creator history so future runs score more like the "
                 "user's taste. Also offer to save any stated preferences "
@@ -515,8 +515,8 @@ def _done_packaging_payload(workspace: Path) -> dict[str, Any]:
         "feedback_prompt": {
             "instructions": (
                 "Offer the user one last chance to record which clips they "
-                "will post via `hermes_clip.py feedback`. Feedback feeds the "
-                "creator profile used on the next `/clip` run."
+                "will post via `hermes_clippos.py feedback`. Feedback feeds the "
+                "creator profile used on the next `/clippos` run."
             ),
             "clip_ids": [clip.get("clip_id") for clip in clips if clip.get("clip_id")],
         },

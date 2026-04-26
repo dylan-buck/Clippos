@@ -1,13 +1,13 @@
 # Agent Skill Workflow
 
 Clippos is packaged as an agent skill so users can invoke the engine
-with `/clip` instead of manually running every CLI stage.
+with `/clippos` instead of manually running every CLI stage.
 
 ## Commands
 
-- `/clip <video>` runs the full local workflow for a video path, attached video
+- `/clippos <video>` runs the full local workflow for a video path, attached video
   file, direct video URL, or platform URL when `yt-dlp` is installed.
-- `/clip-config` checks or writes local defaults such as output directory,
+- `/clippos-config` checks or writes local defaults such as output directory,
   ratios, candidate count, approval threshold, and Hugging Face token status.
 
 Command shims live in `commands/`. The skill contract lives in root `SKILL.md`.
@@ -26,7 +26,7 @@ The skill keeps expensive model usage inside the hosting harness:
 
 ## Helper Script
 
-`scripts/clip_skill.py` provides deterministic operations that agents should
+`scripts/clippos_skill.py` provides deterministic operations that agents should
 not reimplement. Resolve the skill root against `CLAUDE_PLUGIN_ROOT` when
 installed as a plugin, otherwise the repo checkout:
 
@@ -34,11 +34,11 @@ installed as a plugin, otherwise the repo checkout:
 CLIPPOS_ROOT="${CLIPPOS_ROOT:-${CLAUDE_PLUGIN_ROOT:-$PWD}}"
 CLIPPOS_PYTHON="${CLIPPOS_PYTHON:-$CLIPPOS_ROOT/.venv/bin/python}"
 [ -x "$CLIPPOS_PYTHON" ] || CLIPPOS_PYTHON="$(command -v python3)"
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-check
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-write --output-dir ~/Documents/Clippos
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" prepare "$SOURCE" --ratios "9:16,1:1"
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" approve "$REVIEW_MANIFEST" --top 3 --min-score 0.70
-"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" outputs "$RENDER_REPORT"
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clippos_skill.py" config-check
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clippos_skill.py" config-write --output-dir ~/Documents/Clippos
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clippos_skill.py" prepare "$SOURCE" --ratios "9:16,1:1"
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clippos_skill.py" approve "$REVIEW_MANIFEST" --top 3 --min-score 0.70
+"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clippos_skill.py" outputs "$RENDER_REPORT"
 ```
 
 The helper reads `~/.config/clippos/.env`, then lets real environment
@@ -59,7 +59,7 @@ instead of crashing the mine stage.
 
 ## End-To-End Shape
 
-1. `/clip` parses source and options.
+1. `/clippos` parses source and options.
 2. `prepare` writes a job JSON.
 3. `clippos.cli run --stage mine` writes `scoring-request.json`.
 4. The harness model writes `scoring-response.json`.

@@ -1,7 +1,7 @@
 # Hermes Setup Guide for Clippos
 
 This guide covers installing Clippos as a self-contained skill in your
-Hermes workspace. After install, the `/clip` command surfaces in any
+Hermes workspace. After install, the `/clippos` command surfaces in any
 Hermes session.
 
 Clippos is published to Claude Code and Codex via their native plugin
@@ -25,30 +25,30 @@ Clone the repo into your Hermes skill directory and run the bootstrap
 script:
 
 ```bash
-git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clip
-bash ~/.hermes/skills/clip/scripts/bootstrap-venv.sh
+git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clippos
+bash ~/.hermes/skills/clippos/scripts/bootstrap-venv.sh
 ```
 
 The bootstrap script:
 
 1. Verifies Python 3.12 is available (errors out with brew/apt hints
    otherwise).
-2. Creates `~/.hermes/skills/clip/.venv/` and installs the engine
+2. Creates `~/.hermes/skills/clippos/.venv/` and installs the engine
    extras (~5 min, ~700 MB of pip wheels).
 3. Persists `CLIPPOS_ROOT` to `~/.config/clippos/.env` so the SKILL
-   prologue can resolve the install path on every `/clip` call.
+   prologue can resolve the install path on every `/clippos` call.
 
 After bootstrap completes, start a fresh Hermes session and the
-`/clip` command appears automatically — Hermes reads
-`~/.hermes/skills/clip/SKILL.md` and substitutes `${HERMES_SKILL_DIR}`
+`/clippos` command appears automatically — Hermes reads
+`~/.hermes/skills/clippos/SKILL.md` and substitutes `${HERMES_SKILL_DIR}`
 with the install path.
 
 ## Why this is separate from Claude Code / Codex
 
 Both Claude Code (`/plugin marketplace add`) and Codex
 (`codex marketplace add`) have native plugin install flows that clone
-the repo into their own plugin caches and surface `/clip:clip` (Claude)
-or the equivalent slash command. The first `/clip` invocation
+the repo into their own plugin caches and surface `/clippos:clippos` (Claude)
+or the equivalent slash command. The first `/clippos` invocation
 auto-runs `bootstrap-venv.sh` if the `.venv` is missing.
 
 Hermes does not have a marketplace yet, but its self-contained
@@ -56,12 +56,12 @@ workspace at `~/.hermes/` is the natural install location — no global
 config dirs, no `~/.local/share/`, no symlinks. Everything Clippos
 writes (config, model cache, rendered MP4s) defaults to paths that
 respect the user's chosen output directory; the install itself lives
-fully under `~/.hermes/skills/clip/`.
+fully under `~/.hermes/skills/clippos/`.
 
-## First /clip run
+## First /clippos run
 
 ```text
-/clip /absolute/path/to/video.mp4
+/clippos /absolute/path/to/video.mp4
 ```
 
 The first invocation will:
@@ -71,7 +71,7 @@ The first invocation will:
 2. Run the full pipeline: transcribe → diarize → vision → mine → brief
    handoff → score handoff → review → render.
 3. Emit rendered MP4s under `~/Documents/Clippos/jobs/<job_id>/renders/`
-   (override with `/clip config --output-dir ~/path/to/wherever`).
+   (override with `/clippos config --output-dir ~/path/to/wherever`).
 
 Expect ~5 min mining + ~1-2 min render per ratio on a 10-minute source
 on Apple Silicon M2 Pro. See [Hardware requirements](README.md#hardware-requirements)
@@ -80,7 +80,7 @@ for scaling.
 ## Updating
 
 ```bash
-cd ~/.hermes/skills/clip
+cd ~/.hermes/skills/clippos
 git pull
 .venv/bin/pip install -e '.[engine]'   # picks up any pin changes
 ```
@@ -88,14 +88,14 @@ git pull
 If `bootstrap-venv.sh` ever needs to re-run from scratch:
 
 ```bash
-rm -rf ~/.hermes/skills/clip/.venv
-bash ~/.hermes/skills/clip/scripts/bootstrap-venv.sh
+rm -rf ~/.hermes/skills/clippos/.venv
+bash ~/.hermes/skills/clippos/scripts/bootstrap-venv.sh
 ```
 
 ## Uninstall
 
 ```bash
-rm -rf ~/.hermes/skills/clip
+rm -rf ~/.hermes/skills/clippos
 rm -f ~/.config/clippos/.env             # if not also using Claude/Codex
 rm -rf ~/.cache/clippos                  # model weights (optional, ~3.5 GB)
 rm -rf ~/Documents/Clippos               # rendered MP4s (optional, your data)
@@ -108,7 +108,7 @@ apt / pacman hints. Set `CLIPPOS_BOOTSTRAP_PYTHON=/path/to/python3.12`
 to override the discovery if you have a non-PATH install.
 
 **Engine extras failed to install.** Most often a pip cache + uv-strict
-metadata edge case. From `~/.hermes/skills/clip/`:
+metadata edge case. From `~/.hermes/skills/clippos/`:
 ```bash
 rm -rf .venv
 bash scripts/bootstrap-venv.sh
@@ -116,8 +116,8 @@ bash scripts/bootstrap-venv.sh
 
 **Check what's wired up:**
 ```bash
-~/.hermes/skills/clip/.venv/bin/python \
-  ~/.hermes/skills/clip/scripts/hermes_clip.py preflight
+~/.hermes/skills/clippos/.venv/bin/python \
+  ~/.hermes/skills/clippos/scripts/hermes_clippos.py preflight
 ```
 Returns JSON with `ready: true/false`, missing engine modules, the
 active Python interpreter, and the resolved ffmpeg path.

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "clip_skill.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "clippos_skill.py"
 
 
 def _load_clip_skill_module():
@@ -159,7 +159,7 @@ def test_config_check_reports_missing_requirements(tmp_path: Path) -> None:
     assert "ffmpeg" in payload["bins"]
     assert "ffprobe" in payload["bins"]
     assert "ass" in payload["ffmpeg_filters"]
-    # `ready` is the single answer to "can /clip run end-to-end?". Bins,
+    # `ready` is the single answer to "can /clippos run end-to-end?". Bins,
     # render path, and engine extras must all be ok. The dev test env
     # almost always lacks engine extras, so this should be False here —
     # but the field must exist regardless.
@@ -284,7 +284,7 @@ def test_config_write_root_rejects_path_without_helper_script(
     )
 
     assert result.returncode == 2
-    assert "scripts/hermes_clip.py" in result.stderr
+    assert "scripts/hermes_clippos.py" in result.stderr
     assert not config_path.exists()
 
 

@@ -217,7 +217,7 @@ may be uninteresting. The model rejects those during scoring.
 
 ## Validation gate
 
-Re-run `/clip` on the same crypto stream after M1–M3 land. Inspect
+Re-run `/clippos` on the same crypto stream after M1–M3 land. Inspect
 `scoring-request.json`:
 
 - **MUST**: at least one candidate window covers 22:47–26:04 (the

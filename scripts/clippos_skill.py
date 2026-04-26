@@ -180,7 +180,7 @@ def cmd_config_check(args: argparse.Namespace) -> int:
     ass_available = ffmpeg_filter_available("ass")
     render_status = probe_render_ffmpeg()
     engine_status = probe_engine_imports()
-    # `ready` answers the question "can /clip actually run end-to-end on
+    # `ready` answers the question "can /clippos actually run end-to-end on
     # this machine?". Bins gate ingest; render gates the final mp4 stage;
     # engine imports gate mine + score. All three must hold.
     bins_ready = bool(bins["ffmpeg"]) or bool(render_status.get("ready"))
@@ -380,7 +380,7 @@ def cmd_config_write(args: argparse.Namespace) -> int:
         # before persisting it — otherwise the prologue would happily
         # resolve a bogus value and fail later with a confusing error.
         resolved_root = args.root.expanduser().resolve()
-        marker = resolved_root / "scripts" / "hermes_clip.py"
+        marker = resolved_root / "scripts" / "hermes_clippos.py"
         if not marker.is_file():
             raise ValueError(
                 f"--root must point to a Clippos checkout (looked for "

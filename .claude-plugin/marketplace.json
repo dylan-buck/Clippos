@@ -8,7 +8,7 @@
   },
   "plugins": [
     {
-      "name": "clip",
+      "name": "clippos",
       "description": "Analyze videos and render approved social clips with captions and crop plans.",
       "version": "0.1.0",
       "author": {

@@ -7,31 +7,31 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_skill_surface_files_exist() -> None:
     assert (ROOT / "SKILL.md").exists()
     assert (ROOT / "HERMES_SETUP.md").exists()
-    assert (ROOT / "commands" / "clip.md").exists()
-    assert (ROOT / "commands" / "clip-config.md").exists()
+    assert (ROOT / "commands" / "clippos.md").exists()
+    assert (ROOT / "commands" / "clippos-config.md").exists()
     assert (ROOT / ".claude-plugin" / "plugin.json").exists()
     assert (ROOT / ".claude-plugin" / "marketplace.json").exists()
     assert (ROOT / ".codex-plugin" / "plugin.json").exists()
     assert (ROOT / ".agents" / "plugins" / "marketplace.json").exists()
     # The universal first-run venv bootstrap script that all three install
-    # paths invoke (Claude Code lazy on first /clip, Codex lazy on first
-    # /clip, Hermes explicitly post-clone).
+    # paths invoke (Claude Code lazy on first /clippos, Codex lazy on first
+    # /clippos, Hermes explicitly post-clone).
     bootstrap = ROOT / "scripts" / "bootstrap-venv.sh"
     assert bootstrap.exists()
     assert bootstrap.stat().st_mode & 0o111, "bootstrap-venv.sh must be executable"
 
 
 def test_clip_command_invokes_clip_skill() -> None:
-    command = (ROOT / "commands" / "clip.md").read_text(encoding="utf-8")
+    command = (ROOT / "commands" / "clippos.md").read_text(encoding="utf-8")
 
-    assert "Invoke the `clip` skill" in command
+    assert "Invoke the `clippos` skill" in command
     assert "$ARGUMENTS" in command
 
 
 def test_skill_instructions_reference_helper_script() -> None:
     skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 
-    assert "scripts/clip_skill.py" in skill
+    assert "scripts/clippos_skill.py" in skill
     assert "scoring-response.json" in skill
     assert "approved" in skill
 
@@ -49,7 +49,7 @@ def test_readme_documents_native_install_per_harness() -> None:
     assert "codex marketplace add dylan-buck/Clippos" in readme
     # Hermes: clone + bootstrap (no marketplace yet; HERMES_SETUP.md
     # is the canonical Hermes guide).
-    assert "git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clip" in readme
+    assert "git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clippos" in readme
     assert "bootstrap-venv.sh" in readme
     assert "HERMES_SETUP.md" in readme
 
@@ -65,9 +65,9 @@ def test_claude_marketplace_json_exposes_clip_plugin() -> None:
     assert payload.get("name")
     assert isinstance(payload.get("plugins"), list)
     plugin_names = [p.get("name") for p in payload["plugins"]]
-    assert "clip" in plugin_names, (
-        "marketplace.json must list a `clip` plugin entry — that's the "
-        "name Claude Code uses when surfacing /clip:* slash commands."
+    assert "clippos" in plugin_names, (
+        "marketplace.json must list a `clippos` plugin entry — that's the "
+        "name Claude Code uses when surfacing /clippos:* slash commands."
     )
 
 
@@ -81,7 +81,7 @@ def test_codex_marketplace_json_exposes_clip_plugin() -> None:
     assert payload.get("name")
     assert isinstance(payload.get("plugins"), list)
     plugin_names = [p.get("name") for p in payload["plugins"]]
-    assert "clip" in plugin_names
+    assert "clippos" in plugin_names
 
 
 def test_skill_is_hermes_first_with_claude_codex_fallback() -> None:
@@ -89,25 +89,25 @@ def test_skill_is_hermes_first_with_claude_codex_fallback() -> None:
 
     # Hermes is the first-class target…
     assert "${HERMES_SKILL_DIR}" in skill
-    assert "/clip config" in skill
-    assert "/clip package" in skill
+    assert "/clippos config" in skill
+    assert "/clippos package" in skill
 
     # …but the prologue must fall through to CLAUDE_PLUGIN_ROOT so the skill
     # still works as a Claude Code / Codex plugin, and HERMES_SKILL_DIR must
     # appear earlier in the chain than CLAUDE_PLUGIN_ROOT.
     assert "CLAUDE_PLUGIN_ROOT" in skill
-    assert "/clip-config" in skill
-    assert "/clip-package" in skill
+    assert "/clippos-config" in skill
+    assert "/clippos-package" in skill
     assert skill.index("${HERMES_SKILL_DIR}") < skill.index("CLAUDE_PLUGIN_ROOT")
 
 
 def test_skill_routes_hermes_flow_through_hermes_clip_helper() -> None:
     skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 
-    assert "scripts/hermes_clip.py" in skill
+    assert "scripts/hermes_clippos.py" in skill
     assert "advance --source" in skill
     assert "next_action" in skill
-    assert (ROOT / "scripts" / "hermes_clip.py").exists()
+    assert (ROOT / "scripts" / "hermes_clippos.py").exists()
 
 
 def test_skill_documents_messaging_attachment_and_creator_profile_hooks() -> None:
@@ -129,7 +129,7 @@ def test_skill_documents_feedback_loop_and_creator_patterns() -> None:
 
     # The feedback command must be documented where Hermes can see it.
     assert "Feedback Loop" in skill
-    assert "hermes_clip.py feedback" in skill
+    assert "hermes_clippos.py feedback" in skill
     assert "feedback-log.json" in skill
     assert "history.jsonl" in skill
 
