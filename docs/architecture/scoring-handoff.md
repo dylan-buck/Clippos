@@ -8,17 +8,23 @@ the harness writes back into the workspace.
 
 ## Stages
 
-`run_job(job, *, stage=...)` exposes three stages:
+`run_job(job, *, stage=...)` exposes five stages:
 
 - `mine` — ingest, transcribe, analyze vision, mine candidate windows, write
-  `scoring-request.json`, and exit. Returns the request path.
+  `scoring-request.json`, and, when `output_profile.video_brief` is enabled,
+  write `brief-request.json`. Returns the scoring request path.
+- `brief` — load `brief-response.json` or `brief-cache.json`, embed the
+  resolved `video_brief` into `scoring-request.json`, and re-key the clip
+  hashes with the brief digest.
 - `review` — load the existing `scoring-request.json`, require resolved scores
   (either from `scoring-response.json` or the per-clip cache), and write
   `review-manifest.json`. Returns the manifest path. Raises
   `ScoringResponseError` when scoring context is missing or incomplete.
+- `render` — load approved candidates from `review-manifest.json`, render MP4s,
+  and write `render-report.json`.
 - `auto` (default) — run `mine`, then attempt `review` in the same process. If
-  resolved scores are not yet available the command stops at the mine stage and
-  returns the request path instead of raising.
+  brief or scoring model handoffs are not yet available the command returns the
+  relevant request path instead of raising.
 
 The CLI mirrors the stage flag: `python -m clippos.cli run job.json --stage mine`.
 
@@ -28,7 +34,9 @@ All paths are relative to the per-job workspace `<output_dir>/jobs/<job_id>/`.
 
 - `scoring-request.json` — clipper output. Contains `rubric_version`, `job_id`,
   absolute `video_path`, the locked `rubric_prompt`, the JSON `response_schema`,
-  and one `ClipBrief` per mined candidate.
+  optional `video_brief`, and one `ClipBrief` per mined candidate. Each
+  `ClipBrief` includes transcript, mining signals, and, when available, a
+  compact `visual_summary` with face presence, motion, and shot-change stats.
 - `scoring-response.json` — harness input. Must validate against
   `response_schema` and `ScoringResponse`. One `ClipScore` per brief, keyed by
   `clip_hash`.
@@ -39,9 +47,10 @@ All paths are relative to the per-job workspace `<output_dir>/jobs/<job_id>/`.
 
 ## Rubric
 
-The rubric is versioned by `RUBRIC_VERSION` (currently `1.0.0`). Bumping the
+The rubric is versioned by `RUBRIC_VERSION` (currently `1.1.0`). Bumping the
 version invalidates cached scores and forces a fresh response because
-`clip_hash` mixes rubric version with clip bounds and transcript.
+`clip_hash` mixes rubric version with clip bounds, transcript, and optional
+brief context.
 
 Dimensions (each `0.0–1.0`):
 
@@ -51,7 +60,8 @@ Dimensions (each `0.0–1.0`):
 Positive spike categories (zero or more, strict enum):
 
 - `emotional_confrontation`, `controversy`, `taboo`, `absurdity`, `action`,
-  `unusually_useful_claim`.
+  `unusually_useful_claim`, `expert_endorsement`, `specific_pick`,
+  `big_number`.
 
 Penalties (zero or more, strict enum):
 
@@ -66,8 +76,13 @@ Per-clip output fields: `clip_id`, `clip_hash`, `rubric`, `spike_categories`,
 Each brief carries a deterministic `clip_hash`:
 
 ```text
-sha1("<rubric_version>|<start_seconds:.3f>|<end_seconds:.3f>|<transcript>")[:16]
+sha1("<rubric_version>|<start_seconds:.3f>|<end_seconds:.3f>|<transcript>[|context:<video_brief_digest>]")[:16]
 ```
+
+The `context:` suffix is present only when a `video_brief` has been resolved and
+embedded into the scoring request. Changing the brief therefore invalidates old
+per-clip score cache entries instead of silently reusing scores authored under a
+different contextual lens.
 
 Rules enforced by `resolve_scores(...)`:
 
@@ -106,8 +121,11 @@ Each harness wrapper exposes thin helpers over `pipeline.scoring`:
 Typical end-to-end flow:
 
 1. Harness (or CLI) invokes `run_job(job, stage="mine")`.
-2. Harness loads `scoring-request.json`, asks its in-session LLM to score every
+2. If `brief-request.json` exists, the harness authors `brief-response.json`
+   and invokes `run_job(job, stage="brief")` or reruns `auto` so the brief is
+   embedded into the scoring request.
+3. Harness loads `scoring-request.json`, asks its in-session LLM to score every
    clip against the embedded rubric and schema.
-3. Harness writes `scoring-response.json` via the wrapper helper.
-4. Harness invokes `run_job(job, stage="review")` (or reruns `auto`) to get
+4. Harness writes `scoring-response.json` via the wrapper helper.
+5. Harness invokes `run_job(job, stage="review")` (or reruns `auto`) to get
    `review-manifest.json`.

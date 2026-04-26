@@ -17,6 +17,9 @@ reject unexpected fields to keep handoffs explicit and stable.
   `lower-third-clean`, `center-punch`, `top-clean`. Defaults to `hook-default`
   (alias of `bottom-creator`). See
   [render-manifest.md](render-manifest.md#caption-presets) for the catalog.
+- `output_profile.video_brief`: boolean gate for the pre-scoring brief handoff.
+  Defaults to `true`. Set to `false` to skip the extra model handoff while still
+  scoring clips against the generic rubric.
 - `max_candidates`: maximum number of clips surfaced for review
 
 The CLI currently validates a JSON job payload with this contract before invoking
@@ -24,10 +27,14 @@ The CLI currently validates a JSON job payload with this contract before invokin
 
 ## Pipeline Stages
 
-`run_job(job, *, stage=...)` supports four stages:
+`run_job(job, *, stage=...)` supports five stages:
 
 - `mine` — ingest, transcribe, analyze vision, and write
-  `scoring-request.json`; exits at the mine boundary.
+  `scoring-request.json`; when `output_profile.video_brief` is enabled, also
+  write `brief-request.json`; exits at the mine boundary.
+- `brief` — load a valid `brief-response.json` or matching `brief-cache.json`,
+  embed the resulting `video_brief` into `scoring-request.json`, and recompute
+  clip hashes with the brief digest.
 - `review` — load the existing scoring request plus a matching
   `scoring-response.json` (or per-clip cache) and write `review-manifest.json`.
 - `render` — load `review-manifest.json`, re-derive transcript / vision
@@ -41,6 +48,7 @@ The CLI currently validates a JSON job payload with this contract before invokin
   review manifest has been approved.
 
 Workspace artifacts all live under `<output_dir>/jobs/<job_id>/`:
+`brief-request.json`, `brief-response.json`, `brief-cache.json`,
 `scoring-request.json`, `scoring-response.json`, `scoring-cache/*.json`,
 `review-manifest.json`, `renders/<clip_id>/*`, `render-report.json`, and —
 once the `/clippos-package` flow runs — `package-request.json`,
@@ -75,7 +83,8 @@ are written into `output_profile.ratios` before render.
   "review_required": true,
   "output_profile": {
     "ratios": ["9:16", "1:1", "16:9"],
-    "caption_preset": "hook-default"
+    "caption_preset": "hook-default",
+    "video_brief": true
   },
   "max_candidates": 12
 }

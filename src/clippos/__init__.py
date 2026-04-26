@@ -18,4 +18,4 @@ _os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
 del _os
 
 __all__ = ["__version__"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

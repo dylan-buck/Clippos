@@ -9,6 +9,8 @@ with `/clippos` instead of manually running every CLI stage.
   file, direct video URL, or platform URL when `yt-dlp` is installed.
 - `/clippos-config` checks or writes local defaults such as output directory,
   ratios, candidate count, approval threshold, and Hugging Face token status.
+- `/clippos-package` generates titles, thumbnail overlay lines, social captions,
+  hashtags, and hooks for already-rendered clips.
 
 Command shims live in `commands/`. The skill contract lives in root `SKILL.md`.
 
@@ -19,8 +21,9 @@ The skill keeps expensive model usage inside the hosting harness:
 - Local engine: probe, transcription, diarization, vision analysis, candidate
   mining, review manifest generation, crop planning, caption planning, FFmpeg
   rendering.
-- Harness model: semantic scoring of `scoring-request.json` into
-  `scoring-response.json`.
+- Harness model: brief authoring from `brief-request.json`, semantic scoring of
+  `scoring-request.json` into `scoring-response.json`, and optional packaging
+  metadata authoring.
 - Skill helper: config loading, source preparation, approval selection, and
   final output reporting.
 
@@ -63,12 +66,20 @@ instead of crashing the mine stage.
 
 1. `/clippos` parses source and options.
 2. `prepare` writes a job JSON.
-3. `clippos.cli run --stage mine` writes `scoring-request.json`.
-4. The harness model writes `scoring-response.json`.
-5. `clippos.cli run --stage review` writes `review-manifest.json`.
-6. `approve` marks selected candidates with `approved: true`.
-7. `clippos.cli run --stage render` writes final MP4s and `render-report.json`.
-8. `outputs` formats the rendered paths for the final response.
+3. `clippos.cli run --stage mine` writes `scoring-request.json` and, by
+   default, `brief-request.json`.
+4. The harness model writes `brief-response.json`; `--stage brief` embeds the
+   `video_brief` into `scoring-request.json`.
+5. The harness model writes `scoring-response.json`.
+6. `clippos.cli run --stage review` writes `review-manifest.json`.
+7. `approve` marks selected candidates with `approved: true`.
+8. `clippos.cli run --stage render` writes final MP4s and `render-report.json`.
+9. `outputs` formats the rendered paths for the final response.
+
+The Hermes-first driver, `scripts/hermes_clippos.py`, wraps these primitives
+into a resumable `advance` loop. It also persists per-run approval settings,
+auto-approves top clips, renders immediately after scoring, exposes packaging
+as a next step, and records keep/skip feedback.
 
 ## Output Location
 

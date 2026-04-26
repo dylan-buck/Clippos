@@ -1,16 +1,17 @@
 {
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "clippos",
-  "description": "Local video clipping skill for analyzing, scoring, approving, and rendering social clips.",
   "owner": {
     "name": "Dylan Buck",
     "url": "https://github.com/dylan-buck"
+  },
+  "metadata": {
+    "description": "Local video clipping skill for analyzing, scoring, approving, and rendering social clips."
   },
   "plugins": [
     {
       "name": "clippos",
       "description": "Analyze videos and render approved social clips with captions and crop plans.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "Dylan Buck",
         "url": "https://github.com/dylan-buck"
