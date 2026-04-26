@@ -10,8 +10,6 @@
 
 # Clippos
 
-> **Find the moments. Cut the rest.**
-
 Turn any long-form video — local file, YouTube link, Discord/Telegram
 attachment URL, or any URL [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 supports — into captioned, viral-ready social clips with a single
