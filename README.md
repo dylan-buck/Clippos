@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Clippos — Find the moments. Cut the rest." />
+  <img src="assets/banner.jpg" alt="Clippos — Find the moments. Cut the rest." />
 </p>
 
 <p align="center">
