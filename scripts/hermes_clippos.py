@@ -26,9 +26,9 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import subprocess
 import sys
-from hashlib import sha1
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +38,35 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 CLIP_SKILL_SCRIPT = REPO_ROOT / "scripts" / "clippos_skill.py"
+
+# Imported AFTER SRC_ROOT is added to sys.path so the script keeps
+# working when invoked directly out of the source tree.
+from clippos.pipeline.fingerprint import (  # noqa: E402
+    compute_video_fingerprint,
+)
+
+
+def _subprocess_env() -> dict[str, str]:
+    """Set PYTHONPATH so subprocess invocations can import clippos
+    even if the installed editable package is missing/broken in
+    sys.executable's environment.
+
+    The bootstrap-venv `.venv/bin/python` is normally pip-installed
+    editable from `pyproject.toml`, so `python -m clippos.cli` works
+    out of the box. But under harness weirdness — a different
+    `sys.executable`, a stale install, a partially-broken `pip
+    install -e`, or a wheel cache pointing at a deleted path — the
+    `clippos` package can be missing from `sys.path`. Prepending
+    `<repo>/src` to `PYTHONPATH` makes the source layout
+    self-bootstrapping so subprocess CLI calls keep working.
+    """
+    env = os.environ.copy()
+    src_path = str(REPO_ROOT / "src")
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{src_path}{os.pathsep}{existing}" if existing else src_path
+    )
+    return env
 
 
 def _load_clip_skill():
@@ -572,6 +601,8 @@ def cmd_feedback(args: argparse.Namespace) -> int:
         capture_output=True,
         check=False,
         text=True,
+        env=_subprocess_env(),
+        cwd=str(REPO_ROOT),
     )
     if completed.returncode != 0:
         raise HermesClipError(
@@ -647,7 +678,10 @@ def _workspace_from_job(job_path: Path) -> Path:
     payload = json.loads(job_path.read_text(encoding="utf-8"))
     output_dir = Path(payload["output_dir"]).expanduser().resolve()
     video_path = Path(payload["video_path"]).expanduser().resolve(strict=False)
-    job_id = sha1(str(video_path).encode()).hexdigest()[:12]
+    # Mirror src/clippos/pipeline/ingest.py:ingest_job — the job_id is
+    # the source fingerprint (path + size + mtime + version), so a
+    # mutated source file at the same path lands in a fresh workspace.
+    job_id = compute_video_fingerprint(video_path)
     return output_dir / "jobs" / job_id
 
 
@@ -739,6 +773,8 @@ def _run_clip_skill(
         capture_output=True,
         check=False,
         text=True,
+        env=_subprocess_env(),
+        cwd=str(REPO_ROOT),
     )
     if completed.returncode != 0:
         message = completed.stderr.strip() or completed.stdout.strip() or (
@@ -784,6 +820,8 @@ def _run_cli_stage(job_path: Path, stage: str, *, workspace: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
+        env=_subprocess_env(),
+        cwd=str(REPO_ROOT),
     )
     tail: deque[str] = deque(maxlen=60)
     assert proc.stderr is not None

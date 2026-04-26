@@ -1061,12 +1061,38 @@ def verify_downloaded_video(path: Path) -> None:
     Without this, an HTML error page saved with a ``.mp4`` suffix would slip
     through to the mine stage and explode inside ffprobe with a confusing
     trace far from the real failure (the download).
+
+    Resolves ffprobe through ``clippos.adapters.ffmpeg_resolver`` so this
+    validation works on machines that only have the vendored
+    static-ffmpeg fallback (no system ffprobe on PATH). Previously this
+    short-circuited with "ffprobe is required" even when the render path
+    would have happily used the vendored binary — a green preflight
+    that nonetheless failed at ingest.
     """
-    if not shutil.which("ffprobe"):
-        raise ValueError("ffprobe is required to validate downloads but is not on PATH")
+    try:
+        from clippos.adapters.ffmpeg_resolver import (
+            FFmpegNotFoundError,
+            resolve_ffmpeg,
+        )
+    except ImportError as exc:
+        raise ValueError(
+            "Cannot validate downloaded video: clippos.adapters.ffmpeg_resolver "
+            "is not importable. Install engine extras (pip install -e '.[engine]')."
+        ) from exc
+
+    try:
+        resolved = resolve_ffmpeg()
+    except FFmpegNotFoundError as exc:
+        raise ValueError(
+            "Cannot validate downloaded video: no FFmpeg with libass support "
+            "is available and the static-ffmpeg vendored fallback is not "
+            "installed. Install engine extras (pip install -e '.[engine]') "
+            "or a system FFmpeg with libass (e.g. brew reinstall ffmpeg)."
+        ) from exc
+
     result = subprocess.run(
         [
-            "ffprobe",
+            str(resolved.ffprobe),
             "-v",
             "error",
             "-select_streams",

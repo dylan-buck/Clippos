@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from clippos.adapters.storage import write_json
 from clippos.models.candidate import CandidateClip
@@ -231,7 +232,13 @@ def test_resolve_packs_detects_missing_or_swapped_clip() -> None:
         job_id=request.job_id,
         packs=[PublishPack.model_validate(_pack("clip-b", "hash-b"))],
     )
-    with pytest.raises(PackagingResponseError, match="missing pack"):
+    # The new (T2.8) extras-detection runs first and raises on the
+    # unexpected `hash-b` before the missing-pack check fires. Both
+    # signal the same underlying problem (response doesn't match
+    # request) — accept either failure mode.
+    with pytest.raises(
+        PackagingResponseError, match="missing pack|unexpected clip_hash"
+    ):
         resolve_packs(request, missing)
 
     swapped_pack = _pack("clip-b", "hash-a")  # wrong clip_id for hash-a
@@ -242,6 +249,51 @@ def test_resolve_packs_detects_missing_or_swapped_clip() -> None:
     )
     with pytest.raises(PackagingResponseError, match="returned clip_id"):
         resolve_packs(request, swapped)
+
+
+def test_package_response_rejects_duplicate_clip_id() -> None:
+    pack_a = PublishPack.model_validate(_pack("clip-dup", "hash-a"))
+    pack_b = PublishPack.model_validate(_pack("clip-dup", "hash-b"))
+    with pytest.raises(ValidationError, match="duplicate clip_id"):
+        PackageResponse(
+            prompt_version=PACKAGE_PROMPT_VERSION,
+            job_id="job-1",
+            packs=[pack_a, pack_b],
+        )
+
+
+def test_package_response_rejects_duplicate_clip_hash() -> None:
+    pack_a = PublishPack.model_validate(_pack("clip-a", "hash-dup"))
+    pack_b = PublishPack.model_validate(_pack("clip-b", "hash-dup"))
+    with pytest.raises(ValidationError, match="duplicate clip_hash"):
+        PackageResponse(
+            prompt_version=PACKAGE_PROMPT_VERSION,
+            job_id="job-1",
+            packs=[pack_a, pack_b],
+        )
+
+
+def test_resolve_packs_raises_on_extra_clip_hash_not_in_request() -> None:
+    request = build_package_request(
+        job_id="job-1",
+        video_path=Path("/tmp/input.mp4"),
+        briefs=[
+            build_package_brief(
+                candidate=_candidate("clip-a", approved=True),
+                brief=_brief("clip-a", "hash-a"),
+            )
+        ],
+    )
+    response = PackageResponse(
+        prompt_version=request.prompt_version,
+        job_id=request.job_id,
+        packs=[
+            PublishPack.model_validate(_pack("clip-a", "hash-a")),
+            PublishPack.model_validate(_pack("clip-extra", "hash-extra")),
+        ],
+    )
+    with pytest.raises(PackagingResponseError, match="hash-extra"):
+        resolve_packs(request, response)
 
 
 def test_write_pack_artifacts_and_report_fan_out_per_clip(tmp_path: Path) -> None:

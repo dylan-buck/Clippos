@@ -277,6 +277,15 @@ def resolve_packs(
             f"{PACKAGE_RESPONSE_FILENAME} job_id {response.job_id!r} != request "
             f"{request.job_id!r}"
         )
+    expected_hashes = {brief.clip_hash for brief in request.clips}
+    returned_hashes = {pack.clip_hash for pack in response.packs}
+    extras = returned_hashes - expected_hashes
+    if extras:
+        raise PackagingResponseError(
+            f"{PACKAGE_RESPONSE_FILENAME} returned unexpected clip_hash entries "
+            "not present in package-request.json: "
+            + ", ".join(sorted(repr(h) for h in extras))
+        )
     packs_by_hash = {pack.clip_hash: pack for pack in response.packs}
     resolved: list[PublishPack] = []
     for brief in request.clips:

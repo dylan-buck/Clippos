@@ -69,8 +69,11 @@ def test_readme_documents_native_install_per_harness() -> None:
     # Codex: native marketplace add (codex-cli >= 0.121).
     assert "codex marketplace add dylan-buck/Clippos" in readme
     # Hermes: clone + bootstrap (no marketplace yet; HERMES_SETUP.md
-    # is the canonical Hermes guide).
-    assert "git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clippos" in readme
+    # is the canonical Hermes guide). Install command is HERMES_HOME-
+    # aware so the README documents the env-var form rather than a
+    # hardcoded ~/.hermes path.
+    assert "git clone https://github.com/dylan-buck/Clippos" in readme
+    assert "$HERMES_HOME/skills/clippos" in readme
     assert "bootstrap-venv.sh" in readme
     assert "HERMES_SETUP.md" in readme
 

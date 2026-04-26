@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from clippos.adapters.whisperx import TranscriptionConfig
+from clippos.pipeline.fingerprint import compute_video_fingerprint
 from clippos.pipeline.transcribe import (
     TRANSCRIPT_CACHE_FILENAME,
     build_transcript_timeline,
@@ -131,7 +132,13 @@ def test_run_transcription_writes_cache_and_returns_payload(
     cache_path = workspace / TRANSCRIPT_CACHE_FILENAME
     assert cache_path.exists()
     cached = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert cached["metadata"] == {"model": "large-v3", "language": "en"}
+    # T2.7: cache metadata now also embeds source_fingerprint so a
+    # stale cache (source video edited at the same path) is detected
+    # and forces a re-run. Assert the existing model+language fields
+    # plus the presence of the fingerprint without locking its value.
+    assert cached["metadata"]["model"] == "large-v3"
+    assert cached["metadata"]["language"] == "en"
+    assert cached["metadata"]["source_fingerprint"]
     assert cached["payload"] == payload
 
 
@@ -176,7 +183,11 @@ def test_run_transcription_reuses_cache_when_model_matches(
     cache_path.write_text(
         json.dumps(
             {
-                "metadata": {"model": "large-v3", "language": "en"},
+                "metadata": {
+                    "model": "large-v3",
+                    "language": "en",
+                    "source_fingerprint": compute_video_fingerprint(video),
+                },
                 "payload": {"segments": sample_transcript_payload["segments"]},
             }
         ),
@@ -190,6 +201,96 @@ def test_run_transcription_reuses_cache_when_model_matches(
     payload = run_transcription(video, workspace)
 
     assert payload == {"segments": sample_transcript_payload["segments"]}
+
+
+def test_run_transcription_reruns_when_source_fingerprint_mismatches(
+    tmp_path: Path,
+    sample_transcript_payload: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cache key now embeds a source fingerprint (path + size + mtime
+    + clippos.__version__). When the source video at the same path is
+    edited, the fingerprint changes and the cached transcript MUST be
+    invalidated — otherwise we'd silently clip against a stale transcript
+    that no longer matches the file's content."""
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    cache_path = workspace / TRANSCRIPT_CACHE_FILENAME
+    cache_path.write_text(
+        json.dumps(
+            {
+                "metadata": {
+                    "model": "large-v3",
+                    "language": "en",
+                    "source_fingerprint": "deadbeefcafe",
+                },
+                "payload": {"segments": sample_transcript_payload["segments"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[Path] = []
+
+    def fake_transcribe(path: Path, *, config: TranscriptionConfig) -> dict:
+        calls.append(path)
+        return _fake_adapter_result(sample_transcript_payload, model=config.model)
+
+    monkeypatch.setattr(
+        "clippos.pipeline.transcribe.whisperx_adapter.transcribe", fake_transcribe
+    )
+
+    payload = run_transcription(video, workspace)
+
+    assert calls == [video]
+    assert payload == {"segments": sample_transcript_payload["segments"]}
+    refreshed = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert refreshed["metadata"]["source_fingerprint"] == compute_video_fingerprint(
+        video
+    )
+
+
+def test_run_transcription_reruns_when_cache_predates_fingerprint(
+    tmp_path: Path,
+    sample_transcript_payload: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backward compat: a cache file written before fingerprinting was
+    added has no `source_fingerprint` key. Treat it as a miss + log a
+    warning rather than crashing or silently serving stale content."""
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    cache_path = workspace / TRANSCRIPT_CACHE_FILENAME
+    cache_path.write_text(
+        json.dumps(
+            {
+                "metadata": {"model": "large-v3", "language": "en"},
+                "payload": {"segments": sample_transcript_payload["segments"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[Path] = []
+
+    def fake_transcribe(path: Path, *, config: TranscriptionConfig) -> dict:
+        calls.append(path)
+        return _fake_adapter_result(sample_transcript_payload, model=config.model)
+
+    monkeypatch.setattr(
+        "clippos.pipeline.transcribe.whisperx_adapter.transcribe", fake_transcribe
+    )
+
+    payload = run_transcription(video, workspace)
+
+    assert calls == [video]
+    assert payload == {"segments": sample_transcript_payload["segments"]}
+    refreshed = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert refreshed["metadata"]["source_fingerprint"] == compute_video_fingerprint(
+        video
+    )
 
 
 def test_run_transcription_reruns_when_cached_model_mismatches(

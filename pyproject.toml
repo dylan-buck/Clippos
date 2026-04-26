@@ -74,5 +74,5 @@ version = {attr = "clippos.__version__"}
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 markers = [
-    "e2e: real-video pipeline tests that require engine extras, FFmpeg, and HF_TOKEN",
+    "e2e: real-video pipeline tests that require engine extras + FFmpeg. The default SpeechBrain diarizer needs no HF_TOKEN; only the opt-in pyannote path does.",
 ]

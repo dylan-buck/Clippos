@@ -162,6 +162,36 @@ class PackageResponse(ContractModel):
     job_id: str
     packs: list[PublishPack]
 
+    @model_validator(mode="after")
+    def validate_no_duplicate_clip_identifiers(self) -> "PackageResponse":
+        seen_ids: set[str] = set()
+        seen_hashes: set[str] = set()
+        duplicate_ids: list[str] = []
+        duplicate_hashes: list[str] = []
+        for pack in self.packs:
+            if pack.clip_id in seen_ids and pack.clip_id not in duplicate_ids:
+                duplicate_ids.append(pack.clip_id)
+            else:
+                seen_ids.add(pack.clip_id)
+            if (
+                pack.clip_hash in seen_hashes
+                and pack.clip_hash not in duplicate_hashes
+            ):
+                duplicate_hashes.append(pack.clip_hash)
+            else:
+                seen_hashes.add(pack.clip_hash)
+        if duplicate_ids:
+            raise ValueError(
+                "packs contains duplicate clip_id entries: "
+                + ", ".join(repr(v) for v in duplicate_ids)
+            )
+        if duplicate_hashes:
+            raise ValueError(
+                "packs contains duplicate clip_hash entries: "
+                + ", ".join(repr(v) for v in duplicate_hashes)
+            )
+        return self
+
 
 __all__ = [
     "MAX_CAPTION_CHARS",

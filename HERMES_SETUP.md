@@ -22,11 +22,13 @@ no Hermes plugin marketplace yet.
 ## Installation
 
 Clone the repo into your Hermes skill directory and run the bootstrap
-script:
+script. If you set a custom `HERMES_HOME` (e.g. for a separate Hermes
+profile), substitute it for `~/.hermes` everywhere below:
 
 ```bash
-git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clippos
-bash ~/.hermes/skills/clippos/scripts/bootstrap-venv.sh
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+git clone https://github.com/dylan-buck/Clippos "$HERMES_HOME/skills/clippos"
+bash "$HERMES_HOME/skills/clippos/scripts/bootstrap-venv.sh"
 ```
 
 The bootstrap script:

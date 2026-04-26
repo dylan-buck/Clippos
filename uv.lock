@@ -245,7 +245,7 @@ wheels = [
 ]
 
 [[package]]
-name = "clipper-tool"
+name = "clippos"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },

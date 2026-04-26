@@ -3,6 +3,7 @@ import json
 import shutil
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -867,15 +868,85 @@ def test_verify_downloaded_video_rejects_non_video_file(tmp_path: Path) -> None:
         clip_skill.verify_downloaded_video(bogus)
 
 
-def test_verify_downloaded_video_requires_ffprobe(
+def test_verify_downloaded_video_uses_resolved_ffprobe_not_system(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The bug Hermes flagged: verify_downloaded_video used to short-
+    circuit on `shutil.which("ffprobe")`, so a machine with only the
+    vendored static-ffmpeg fallback (no system ffprobe on PATH) would
+    fail ingest even though render worked. Route through the resolver
+    instead — verify it actually invokes the resolver-supplied path,
+    not a bare ``ffprobe``.
+    """
     clip_skill = _load_clip_skill_module()
+    fake_ffprobe = tmp_path / "vendored_bin" / "ffprobe"
+    fake_ffprobe.parent.mkdir()
+    fake_ffprobe.write_text("#!/usr/bin/env true")
+
+    fake_resolved = types.SimpleNamespace(
+        ffmpeg=tmp_path / "vendored_bin" / "ffmpeg",
+        ffprobe=fake_ffprobe,
+        source="vendored",
+    )
+
+    fake_resolver = types.ModuleType("clippos.adapters.ffmpeg_resolver")
+
+    class _NotFound(RuntimeError):
+        pass
+
+    fake_resolver.FFmpegNotFoundError = _NotFound
+    fake_resolver.resolve_ffmpeg = lambda: fake_resolved
+    monkeypatch.setitem(
+        sys.modules, "clippos.adapters.ffmpeg_resolver", fake_resolver
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=0,
+            stdout=json.dumps({"streams": [{"codec_type": "video"}]}),
+            stderr="",
+        )
+
+    # System ffprobe absent — proves we don't depend on it any more.
     monkeypatch.setattr(clip_skill.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(clip_skill.subprocess, "run", fake_run)
+
     target = tmp_path / "video.mp4"
     target.write_bytes(b"fake")
 
-    with pytest.raises(ValueError, match="ffprobe is required"):
+    clip_skill.verify_downloaded_video(target)
+
+    assert captured["command"][0] == str(fake_ffprobe)
+
+
+def test_verify_downloaded_video_errors_when_resolver_finds_no_ffprobe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When neither system ffprobe nor the vendored fallback is
+    available, surface a clear error mentioning engine extras."""
+    clip_skill = _load_clip_skill_module()
+    fake_resolver = types.ModuleType("clippos.adapters.ffmpeg_resolver")
+
+    class _NotFound(RuntimeError):
+        pass
+
+    def boom() -> None:
+        raise _NotFound("nothing here")
+
+    fake_resolver.FFmpegNotFoundError = _NotFound
+    fake_resolver.resolve_ffmpeg = boom
+    monkeypatch.setitem(
+        sys.modules, "clippos.adapters.ffmpeg_resolver", fake_resolver
+    )
+
+    target = tmp_path / "video.mp4"
+    target.write_bytes(b"fake")
+
+    with pytest.raises(ValueError, match="engine"):
         clip_skill.verify_downloaded_video(target)
 
 

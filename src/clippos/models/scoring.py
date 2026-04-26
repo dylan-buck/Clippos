@@ -180,3 +180,33 @@ class ScoringResponse(ContractModel):
     rubric_version: str
     job_id: str
     scores: list[ClipScore]
+
+    @model_validator(mode="after")
+    def validate_no_duplicate_clip_identifiers(self) -> "ScoringResponse":
+        seen_ids: set[str] = set()
+        seen_hashes: set[str] = set()
+        duplicate_ids: list[str] = []
+        duplicate_hashes: list[str] = []
+        for score in self.scores:
+            if score.clip_id in seen_ids and score.clip_id not in duplicate_ids:
+                duplicate_ids.append(score.clip_id)
+            else:
+                seen_ids.add(score.clip_id)
+            if (
+                score.clip_hash in seen_hashes
+                and score.clip_hash not in duplicate_hashes
+            ):
+                duplicate_hashes.append(score.clip_hash)
+            else:
+                seen_hashes.add(score.clip_hash)
+        if duplicate_ids:
+            raise ValueError(
+                "scores contains duplicate clip_id entries: "
+                + ", ".join(repr(v) for v in duplicate_ids)
+            )
+        if duplicate_hashes:
+            raise ValueError(
+                "scores contains duplicate clip_hash entries: "
+                + ", ".join(repr(v) for v in duplicate_hashes)
+            )
+        return self

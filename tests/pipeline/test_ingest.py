@@ -1,9 +1,11 @@
+import os
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from clippos.models.job import ClipposJob
+from clippos.pipeline.fingerprint import compute_video_fingerprint
 from clippos.pipeline.ingest import ingest_job
 
 
@@ -54,6 +56,69 @@ def test_ingest_job_uses_stable_job_id(tmp_path: Path) -> None:
     )
 
     assert one.job_id == two.job_id
+
+
+def test_ingest_job_id_matches_video_fingerprint(tmp_path: Path) -> None:
+    """The job_id IS the source fingerprint. This contract is what makes
+    workspace cache invalidation work — orchestrator + hermes both
+    derive the same workspace dir from the same fingerprint, and the
+    transcript / vision artifacts inside that workspace match the
+    file's current content."""
+    video = tmp_path / "input.mp4"
+    video.write_bytes(b"fake")
+    job = ClipposJob(video_path=video, output_dir=tmp_path / "out")
+
+    result = ingest_job(
+        job,
+        probe_data={
+            "duration_seconds": 1.0,
+            "width": 1,
+            "height": 1,
+            "fps": 1.0,
+            "audio_sample_rate": 16000,
+        },
+    )
+
+    expected = compute_video_fingerprint(video)
+    assert result.job_id == expected
+    assert result.source_fingerprint == expected
+    assert result.workspace_dir == job.output_dir / "jobs" / expected
+
+
+def test_ingest_job_returns_fresh_workspace_when_source_content_changes(
+    tmp_path: Path,
+) -> None:
+    """The headline correctness fix: re-running ingest on a video whose
+    content was edited (size or mtime delta) at the same path MUST land
+    in a different workspace, so stale transcript.json / vision.json
+    artifacts from the previous content don't leak into the new run."""
+    video = tmp_path / "input.mp4"
+    video.write_bytes(b"original content")
+    job = ClipposJob(video_path=video, output_dir=tmp_path / "out")
+
+    probe_data = {
+        "duration_seconds": 1.0,
+        "width": 1,
+        "height": 1,
+        "fps": 1.0,
+        "audio_sample_rate": 16000,
+    }
+
+    before = ingest_job(job, probe_data=probe_data)
+
+    # Mutate the source file. A new size + a freshly-bumped mtime both
+    # invalidate the fingerprint, so either one would be enough — we
+    # exercise both for belt-and-suspenders coverage.
+    video.write_bytes(b"edited content with a different length entirely")
+    stat = video.stat()
+    os.utime(video, (stat.st_atime, stat.st_mtime + 5))
+
+    after = ingest_job(job, probe_data=probe_data)
+
+    assert before.job_id != after.job_id
+    assert before.workspace_dir != after.workspace_dir
+    assert before.workspace_dir.exists()
+    assert after.workspace_dir.exists()
 
 
 def test_ingest_job_normalizes_raw_ffprobe_payload(

@@ -55,7 +55,9 @@ instead of crashing the mine stage.
 - `CLIPPOS_APPROVE_TOP`: max clips approved by the skill helper.
 - `CLIPPOS_MIN_SCORE`: approval threshold; if no clip clears it, the best clip
   is approved so the user gets output.
-- `HF_TOKEN`: Hugging Face token for WhisperX / pyannote diarization.
+- `HF_TOKEN`: optional. Only needed for the pyannote diarization opt-in
+  (`CLIPPOS_DIARIZER=pyannote`). Default diarizer is the open-source
+  SpeechBrain stack; no token required.
 
 ## End-To-End Shape
 

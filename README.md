@@ -15,25 +15,84 @@ keep/skip decisions over time.
 
 Designed Hermes-first. Works anywhere.
 
+## Why Hermes?
+
+Clippos is built Hermes-first because Hermes is the natural home for
+agent-native, local-first creator tools. The split lines up cleanly:
+
+- **Hermes provides editorial judgment.** Per-clip scoring, brief
+  authoring, packaging (titles, captions, hashtags), and "did the
+  user post this?" feedback all happen via Hermes' active model — no
+  vendor lock-in, no API key, your model your call.
+- **Clippos provides the deterministic media engine.** Whisper
+  large-v3 + SpeechBrain diarization + RetinaFace + RAFT optical
+  flow + virtual-camera crop + ASS captions + multi-ratio render —
+  all local, no upload, no third-party API.
+- **The state lives where Hermes can see it.** Every stage writes a
+  JSON artifact (transcript, vision, brief, scores, review,
+  renders, packages, feedback) so Hermes can pause, inspect, resume,
+  and learn across runs.
+- **Self-improving creator profile.** Your kept/skipped feedback
+  becomes `creator_patterns` attached to the next scoring handoff —
+  Hermes' notion of persistent preference, applied per video.
+
+The same skill also runs in Claude Code and Codex (via their native
+plugin marketplaces) and in any harness that can shell out to a
+Python script and read JSON. But the design center is Hermes.
+
 ## Install
 
 > **Heads up:** first `/clippos` run downloads ~3.5 GB of model weights and
 > the pipeline is compute-heavy. Read [Hardware requirements](#hardware-requirements)
 > before installing — 16 GB RAM is the practical floor.
 
-Each harness installs Clippos via its native plugin mechanism. No
+Each harness installs Clippos via its native install mechanism. No
 top-level install script — the per-harness commands below are
 canonical.
 
-| Harness         | Install command                                               | Command surface                          |
-| --------------- | ------------------------------------------------------------- | ---------------------------------------- |
-| **Claude Code** | `/plugin marketplace add dylan-buck/Clippos`                  | `/clippos:clippos`, `/clippos:clippos-config`, `/clippos:clippos-package` |
-| **Codex**       | `codex marketplace add dylan-buck/Clippos`                    | `/clippos`, `/clippos-config`, `/clippos-package` |
-| **Hermes**      | `git clone … ~/.hermes/skills/clippos && bash …/bootstrap-venv.sh` | `/clippos`, `/clippos config`, `/clippos package` |
-| **Any harness** | Clone, run `bootstrap-venv.sh`, drive `scripts/hermes_clippos.py`    | `hermes_clippos.py advance --source ...`    |
+| Harness         | Install command                                                                                | Command surface                                          |
+| --------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| **Hermes**      | `git clone https://github.com/dylan-buck/Clippos $HERMES_HOME/skills/clippos && bash …/bootstrap-venv.sh` | `/clippos`, `/clippos config`, `/clippos package`        |
+| **Claude Code** | `/plugin marketplace add dylan-buck/Clippos`                                                   | `/clippos:clippos`, `/clippos:clippos-config`, `/clippos:clippos-package` |
+| **Codex**       | `codex marketplace add dylan-buck/Clippos`                                                     | `/clippos`, `/clippos-config`, `/clippos-package`        |
+| **Any harness** | Clone, run `bootstrap-venv.sh`, drive `scripts/hermes_clippos.py`                              | `hermes_clippos.py advance --source ...`                 |
 
 All four paths resolve to the same `SKILL.md` and the same helper
 scripts.
+
+### Hermes (recommended)
+
+Hermes is a self-contained workspace — no marketplace yet, but the
+install + first-run flow is one paste:
+
+```bash
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+git clone https://github.com/dylan-buck/Clippos "$HERMES_HOME/skills/clippos"
+bash "$HERMES_HOME/skills/clippos/scripts/bootstrap-venv.sh"
+```
+
+The bootstrap script verifies Python 3.12, creates a `.venv` inside
+the skill dir, pip-installs the engine extras (~5 min, ~700 MB of
+wheels), and persists `CLIPPOS_ROOT` to `~/.config/clippos/.env`.
+Resumable on partial failures — a half-installed `.venv` will pick
+up where it left off the next time you run the script.
+
+Start a fresh Hermes session and the `/clippos` skill registers
+automatically. See [HERMES_SETUP.md](HERMES_SETUP.md) for
+prerequisites, troubleshooting, update flow, and the gateway-syntax
+notes for Discord / Telegram. Typical CLI usage:
+
+```text
+/clippos /absolute/path/video.mp4
+/clippos https://www.youtube.com/watch?v=...
+/clippos config --output-dir ~/Documents/Clippos
+/clippos package
+```
+
+Attachment URLs dropped into Discord/Telegram are detected and
+downloaded directly (yt-dlp is skipped for signed CDN URLs). Verify
+the exact gateway syntax in your Hermes deployment before relying on
+chat-native invocation in production.
 
 ### Claude Code
 
@@ -45,10 +104,10 @@ From inside Claude Code:
 ```
 
 The marketplace registers the repo and Claude Code clones it into
-`~/.claude/plugins/cache/Clippos/clippos/<sha>/`. The first `/clippos:clippos`
-invocation auto-runs `scripts/bootstrap-venv.sh` once to create the
-`.venv` and pip-install the engine extras (~5 min, ~700 MB of wheels).
-Subsequent calls skip the bootstrap.
+`~/.claude/plugins/cache/Clippos/clippos/<sha>/`. The first
+`/clippos:clippos` invocation auto-runs `scripts/bootstrap-venv.sh`
+to create the `.venv` and pip-install the engine extras (~5 min,
+~700 MB of wheels). Subsequent calls skip the bootstrap.
 
 ```text
 /clippos:clippos /absolute/path/video.mp4
@@ -73,35 +132,8 @@ enabled = true
 ```
 
 Codex clones the repo into `~/.codex/plugins/cache/Clippos/clippos/<sha>/`
-and the same first-run bootstrap behavior applies — `bootstrap-venv.sh`
-runs on first `/clippos` to create the `.venv`. Slash commands are
+and the same first-run bootstrap behavior applies. Slash commands are
 identical to Claude Code (without the `clippos:` namespace prefix).
-
-### Hermes
-
-Hermes is a self-contained workspace and does not have a marketplace
-yet. Install directly into your Hermes skill directory and run the
-bootstrap script:
-
-```bash
-git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clippos
-bash ~/.hermes/skills/clippos/scripts/bootstrap-venv.sh
-```
-
-Start a fresh Hermes session and the `/clippos` skill appears
-automatically. See [HERMES_SETUP.md](HERMES_SETUP.md) for the full
-guide (prerequisites, troubleshooting, update flow). Typical Hermes
-usage:
-
-```text
-/clippos /absolute/path/video.mp4
-/clippos https://cdn.discordapp.com/attachments/... --ratios 9:16,1:1 --clips 2
-/clippos config --output-dir ~/Documents/Clippos
-/clippos package
-```
-
-Attachment URLs dropped into Discord/Telegram are detected and
-downloaded directly (yt-dlp is skipped for signed CDN URLs).
 
 ### Any other harness (generic)
 

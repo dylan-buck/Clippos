@@ -22,7 +22,11 @@ def test_real_video_runs_mine_review_approval_and_render(tmp_path: Path) -> None
     _require_binary("ffmpeg")
     _require_binary("ffprobe")
     _require_engine_dependencies()
-    _require_hf_token()
+    # The default diarizer is the open-source SpeechBrain stack — no
+    # HF_TOKEN required. Only the opt-in pyannote path needs the token,
+    # so gate on it conditionally instead of unconditionally.
+    if os.environ.get("CLIPPOS_DIARIZER") == "pyannote":
+        _require_hf_token()
 
     job = ClipposJob(
         video_path=video_path,
@@ -99,7 +103,11 @@ def _require_hf_token() -> None:
         os.environ.get(name)
         for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN")
     ):
-        pytest.skip("HF_TOKEN is required for WhisperX diarization")
+        pytest.skip(
+            "CLIPPOS_DIARIZER=pyannote is set but no HF_TOKEN found; "
+            "set HF_TOKEN or unset CLIPPOS_DIARIZER to fall back to "
+            "the zero-config SpeechBrain stack."
+        )
 
 
 def _score_for_clip(*, clip_id: str, clip_hash: str, final_score: float) -> ClipScore:

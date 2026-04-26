@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from clippos.adapters.rubric import RUBRIC_VERSION, build_rubric_prompt
 from clippos.models.candidate import CandidateClip
@@ -562,6 +563,53 @@ def test_resolve_scores_returns_none_when_any_clip_is_unscored(tmp_path: Path) -
     )
 
     assert resolve_scores(tmp_path) is None
+
+
+def test_scoring_response_rejects_duplicate_clip_id() -> None:
+    a = _clip_score(clip_id="clip-dup", clip_hash="hash-a")
+    b = _clip_score(clip_id="clip-dup", clip_hash="hash-b")
+    with pytest.raises(ValidationError, match="duplicate clip_id"):
+        ScoringResponse(rubric_version=RUBRIC_VERSION, job_id="job-1", scores=[a, b])
+
+
+def test_scoring_response_rejects_duplicate_clip_hash() -> None:
+    a = _clip_score(clip_id="clip-a", clip_hash="hash-dup")
+    b = _clip_score(clip_id="clip-b", clip_hash="hash-dup")
+    with pytest.raises(ValidationError, match="duplicate clip_hash"):
+        ScoringResponse(rubric_version=RUBRIC_VERSION, job_id="job-1", scores=[a, b])
+
+
+def test_resolve_scores_raises_on_extra_clip_hash_not_in_request(
+    tmp_path: Path,
+) -> None:
+    segments = (_segment(text="only one"),)
+    brief = build_clip_brief(
+        candidate=_candidate(end_seconds=8.0),
+        scored=_scored_window(segments),
+    )
+    request = build_scoring_request(
+        job_id="job-1",
+        video_path=tmp_path / "v.mp4",
+        briefs=[brief],
+    )
+    write_scoring_request(tmp_path, request)
+    expected_score = _clip_score(clip_id="clip-000", clip_hash=brief.clip_hash)
+    extra_score = _clip_score(clip_id="clip-extra", clip_hash="extrahashextrahash")
+    (tmp_path / SCORING_RESPONSE_FILENAME).write_text(
+        json.dumps(
+            {
+                "rubric_version": RUBRIC_VERSION,
+                "job_id": "job-1",
+                "scores": [
+                    expected_score.model_dump(mode="json"),
+                    extra_score.model_dump(mode="json"),
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ScoringResponseError, match="extrahashextrahash"):
+        resolve_scores(tmp_path)
 
 
 def test_scores_to_model_payload_shape_is_build_review_manifest_friendly() -> None:

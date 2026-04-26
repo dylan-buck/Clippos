@@ -1,6 +1,26 @@
 ---
 name: clippos
+version: 1.1.0
+author: Dylan Buck
+license: MIT
 description: Local video clipping automation for /clippos requests, attached video files, video links, social clip generation, captioned shorts, crop/framing, and rendered 9:16, 1:1, or 16:9 exports. Use this skill whenever the user wants an agent to turn a video into high-potential clips, score clips with the current harness model, approve selected clips, and render final MP4 outputs.
+metadata:
+  hermes:
+    tags:
+      - video
+      - clipping
+      - social-media
+      - local-ai
+      - captions
+      - ffmpeg
+      - whisperx
+      - creator-tools
+      - agent-native
+prerequisites:
+  python: ">=3.12,<3.13"
+  commands: [bash, git]
+  ram_gb_min: 16
+  disk_gb_min: 10
 ---
 
 # Clippos Skill
@@ -136,9 +156,10 @@ skill directory across harnesses:
 # bash blocks (Anthropic issue #9354), so we also probe known install
 # locations (Claude Code plugin cache, Codex plugin cache, Hermes skill
 # dir) and the persisted CLIPPOS_ROOT in the config file.
+_CLIPPOS_HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 for candidate in "${CLIPPOS_ROOT:-}" "${HERMES_SKILL_DIR:-}" "${CLAUDE_PLUGIN_ROOT:-}" \
-                 "$HOME/.hermes/skills/clippos" "$HOME/.claude/skills/clippos" \
-                 "$HOME/.codex/skills/clippos"; do
+                 "$_CLIPPOS_HERMES_HOME/skills/clippos" \
+                 "$HOME/.claude/skills/clippos" "$HOME/.codex/skills/clippos"; do
   if [ -n "$candidate" ] && [ -f "$candidate/scripts/hermes_clippos.py" ]; then
     CLIPPOS_ROOT="$candidate"; break
   fi
@@ -171,6 +192,18 @@ if [ -z "${CLIPPOS_ROOT:-}" ] && [ -f "$HOME/.config/clippos/.env" ]; then
 fi
 [ -n "${CLIPPOS_ROOT:-}" ] && [ -f "$CLIPPOS_ROOT/scripts/hermes_clippos.py" ] || \
   { [ -f "$PWD/scripts/hermes_clippos.py" ] && CLIPPOS_ROOT="$PWD"; }
+# Hard guard — fail fast and explicit. Without this, an empty CLIPPOS_ROOT
+# falls into bash "/scripts/bootstrap-venv.sh" with a confusing error far
+# from the real cause. Surface the install instructions instead.
+if [ -z "${CLIPPOS_ROOT:-}" ] || [ ! -f "$CLIPPOS_ROOT/scripts/hermes_clippos.py" ]; then
+  printf '[clippos] Could not resolve CLIPPOS_ROOT.\n' >&2
+  printf '[clippos] Install Clippos with one of:\n' >&2
+  printf '[clippos]   Hermes:      git clone https://github.com/dylan-buck/Clippos %s/skills/clippos\n' "$_CLIPPOS_HERMES_HOME" >&2
+  printf '[clippos]   Claude Code: /plugin marketplace add dylan-buck/Clippos\n' >&2
+  printf '[clippos]   Codex:       codex marketplace add dylan-buck/Clippos\n' >&2
+  printf '[clippos] Or set CLIPPOS_ROOT=/abs/path/to/Clippos and re-run.\n' >&2
+  exit 1
+fi
 # v1.x bootstrap: native plugin managers (Claude Code's /plugin, Codex's
 # `codex marketplace add`) clone the repo but do not run pip — there is
 # no PostInstall hook for engine extras. The bootstrap script creates a
@@ -373,4 +406,7 @@ End the response with:
 - Any setup or render failures with the exact command that failed.
 
 Do not call the job production-ready until a real-video `/clippos` run has
-completed on the user's machine with engine extras and `HF_TOKEN` configured.
+completed on the user's machine with engine extras installed. `HF_TOKEN`
+is **not** required — the default diarizer is the open-source SpeechBrain
+stack. Only mention `HF_TOKEN` if the user explicitly opted into the
+pyannote upgrade with `CLIPPOS_DIARIZER=pyannote`.

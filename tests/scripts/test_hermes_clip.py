@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import subprocess
 import sys
-from hashlib import sha1
 from pathlib import Path
 
 import pytest
+
+from clippos.pipeline.fingerprint import compute_video_fingerprint
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "hermes_clippos.py"
 CLIP_SKILL_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "clippos_skill.py"
@@ -282,7 +284,7 @@ def test_advance_emits_brief_handoff_when_brief_request_exists_and_unanswered(
     source = tmp_path / "input.mp4"
     source.write_bytes(b"fake")
     video_resolved = source.resolve()
-    job_id = sha1(str(video_resolved).encode()).hexdigest()[:12]
+    job_id = compute_video_fingerprint(video_resolved)
     workspace = output_dir / "jobs" / job_id
     workspace.mkdir(parents=True)
     # State setup: scoring-request and brief-request both exist; no
@@ -338,7 +340,7 @@ def test_advance_emits_score_handoff_when_scoring_request_exists(
     source = tmp_path / "input.mp4"
     source.write_bytes(b"fake")
     video_resolved = source.resolve()
-    job_id = sha1(str(video_resolved).encode()).hexdigest()[:12]
+    job_id = compute_video_fingerprint(video_resolved)
     workspace = output_dir / "jobs" / job_id
     workspace.mkdir(parents=True)
     (workspace / "scoring-request.json").write_text("{}", encoding="utf-8")
@@ -414,7 +416,7 @@ def test_advance_writes_resume_sidecar_when_falling_back_to_skill_jobs(
     source = tmp_path / "input.mp4"
     source.write_bytes(b"fake")
     video_resolved = source.resolve()
-    job_id = sha1(str(video_resolved).encode()).hexdigest()[:12]
+    job_id = compute_video_fingerprint(video_resolved)
     workspace = output_dir / "jobs" / job_id
     workspace.mkdir(parents=True)
     (workspace / "scoring-request.json").write_text("{}", encoding="utf-8")
@@ -452,7 +454,7 @@ def test_advance_score_handoff_includes_creator_patterns_when_history_exists(
     source = tmp_path / "input.mp4"
     source.write_bytes(b"fake")
     video_resolved = source.resolve()
-    job_id = sha1(str(video_resolved).encode()).hexdigest()[:12]
+    job_id = compute_video_fingerprint(video_resolved)
     workspace = output_dir / "jobs" / job_id
     workspace.mkdir(parents=True)
     (workspace / "scoring-request.json").write_text("{}", encoding="utf-8")
@@ -540,7 +542,7 @@ def test_advance_score_handoff_omits_creator_patterns_on_empty_history(
     source = tmp_path / "input.mp4"
     source.write_bytes(b"fake")
     video_resolved = source.resolve()
-    job_id = sha1(str(video_resolved).encode()).hexdigest()[:12]
+    job_id = compute_video_fingerprint(video_resolved)
     workspace = output_dir / "jobs" / job_id
     workspace.mkdir(parents=True)
     (workspace / "scoring-request.json").write_text("{}", encoding="utf-8")
@@ -586,7 +588,7 @@ def test_advance_emits_done_renders_when_render_report_exists(tmp_path: Path) ->
     source = tmp_path / "input.mp4"
     source.write_bytes(b"fake")
     video_resolved = source.resolve()
-    job_id = sha1(str(video_resolved).encode()).hexdigest()[:12]
+    job_id = compute_video_fingerprint(video_resolved)
     workspace = output_dir / "jobs" / job_id
     workspace.mkdir(parents=True)
 
@@ -709,7 +711,7 @@ def test_advance_emits_package_handoff_when_package_request_exists(
     source = tmp_path / "input.mp4"
     source.write_bytes(b"fake")
     video_resolved = source.resolve()
-    job_id = sha1(str(video_resolved).encode()).hexdigest()[:12]
+    job_id = compute_video_fingerprint(video_resolved)
     workspace = output_dir / "jobs" / job_id
     workspace.mkdir(parents=True)
 
@@ -759,6 +761,108 @@ def test_latest_workspace_delegates_to_clip_skill(tmp_path: Path) -> None:
     assert payload["workspace"] == str(workspace.resolve())
 
 
+def test_subprocess_env_prepends_src_to_pythonpath(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_subprocess_env` must prepend `<repo>/src` to PYTHONPATH so
+    subprocess CLI invocations can import `clippos` even when the
+    editable install in `sys.executable`'s environment is missing or
+    broken. When PYTHONPATH is already set in the parent environment,
+    its value must be preserved (appended after our `src` entry) so we
+    don't clobber tooling that depends on it."""
+    hermes = _load_hermes_module()
+
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    env = hermes._subprocess_env()
+    expected_src = str(hermes.REPO_ROOT / "src")
+    assert env["PYTHONPATH"] == expected_src
+
+    monkeypatch.setenv("PYTHONPATH", "/some/other/path")
+    env_with_existing = hermes._subprocess_env()
+    parts = env_with_existing["PYTHONPATH"].split(os.pathsep)
+    assert parts[0] == expected_src
+    assert "/some/other/path" in parts
+
+
+def test_run_clip_skill_passes_env_and_cwd(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`_run_clip_skill` must set `env=` (with PYTHONPATH including
+    `<repo>/src`) and `cwd=REPO_ROOT` so the spawned `clippos_skill.py`
+    process can import the package even under a misconfigured
+    interpreter. Without this, harness venv weirdness would manifest as
+    a hard `ModuleNotFoundError: clippos` at the first subprocess
+    boundary."""
+    hermes = _load_hermes_module()
+    captured: dict[str, object] = {}
+
+    class FakeCompleted:
+        returncode = 0
+        stdout = "{}"
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        return FakeCompleted()
+
+    monkeypatch.setattr(hermes.subprocess, "run", fake_run)
+    out = hermes._run_clip_skill(["prepare"], workspace=None, stage="prepare")
+
+    assert out == "{}"
+    kwargs = captured["kwargs"]
+    assert "env" in kwargs
+    assert "cwd" in kwargs
+    assert kwargs["cwd"] == str(hermes.REPO_ROOT)
+    pythonpath = kwargs["env"]["PYTHONPATH"]
+    assert str(hermes.REPO_ROOT / "src") in pythonpath.split(os.pathsep)
+
+
+def test_run_cli_stage_passes_env_and_cwd(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`_run_cli_stage` spawns `python -m clippos.cli`, which is the
+    most likely failure point for harness venv weirdness — `-m
+    clippos.cli` fails hard with `No module named clippos` when the
+    editable install is missing. Setting env + cwd defensively lets
+    the source-layout PYTHONPATH provide a safety net. Must also
+    preserve the live-stderr passthrough behavior (stderr=PIPE,
+    bufsize=1, text=True)."""
+    hermes = _load_hermes_module()
+    captured: dict[str, object] = {}
+
+    class FakeProc:
+        returncode = 0
+        stderr = iter([])
+
+        def wait(self):
+            return 0
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        return FakeProc()
+
+    monkeypatch.setattr(hermes.subprocess, "Popen", fake_popen)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    job_path = tmp_path / "job.json"
+    job_path.write_text("{}", encoding="utf-8")
+
+    hermes._run_cli_stage(job_path, "mine", workspace=workspace)
+
+    kwargs = captured["kwargs"]
+    assert "env" in kwargs
+    assert "cwd" in kwargs
+    assert kwargs["cwd"] == str(hermes.REPO_ROOT)
+    pythonpath = kwargs["env"]["PYTHONPATH"]
+    assert str(hermes.REPO_ROOT / "src") in pythonpath.split(os.pathsep)
+    # Must preserve live-stderr passthrough plumbing.
+    assert kwargs["stderr"] == hermes.subprocess.PIPE
+    assert kwargs["text"] is True
+    assert kwargs["bufsize"] == 1
+
+
 def test_workspace_from_job_matches_orchestrator_convention(tmp_path: Path) -> None:
     hermes = _load_hermes_module()
     job_path = tmp_path / "job.json"
@@ -780,5 +884,5 @@ def test_workspace_from_job_matches_orchestrator_convention(tmp_path: Path) -> N
     )
 
     workspace = hermes._workspace_from_job(job_path)
-    expected_id = sha1(str(video_path.resolve()).encode()).hexdigest()[:12]
+    expected_id = compute_video_fingerprint(video_path.resolve())
     assert workspace == output_dir.resolve() / "jobs" / expected_id

@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from clippos.adapters.vision import VisionConfig
+from clippos.pipeline.fingerprint import compute_video_fingerprint
 from clippos.pipeline.vision import (
     VISION_CACHE_FILENAME,
     build_vision_timeline,
@@ -93,7 +94,11 @@ def test_run_vision_writes_cache_and_returns_payload(
     cache_path = workspace / VISION_CACHE_FILENAME
     assert cache_path.exists()
     cached = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert cached["metadata"] == {"model": "retinaface-resnet50-raft-scenedetect"}
+    # T2.7: cache metadata now embeds source_fingerprint alongside the
+    # model id so stale caches (source video changed at same path) are
+    # invalidated. Lock the model field; assert fingerprint exists.
+    assert cached["metadata"]["model"] == "retinaface-resnet50-raft-scenedetect"
+    assert cached["metadata"]["source_fingerprint"]
     assert cached["payload"] == payload
 
 
@@ -132,7 +137,10 @@ def test_run_vision_reuses_cache_when_model_matches(
     cache_path.write_text(
         json.dumps(
             {
-                "metadata": {"model": "retinaface-resnet50-raft-scenedetect"},
+                "metadata": {
+                    "model": "retinaface-resnet50-raft-scenedetect",
+                    "source_fingerprint": compute_video_fingerprint(video),
+                },
                 "payload": {"frames": sample_face_payload["frames"]},
             }
         ),
@@ -147,6 +155,90 @@ def test_run_vision_reuses_cache_when_model_matches(
     payload = run_vision(video, workspace)
 
     assert payload == {"frames": sample_face_payload["frames"]}
+
+
+def test_run_vision_reruns_when_source_fingerprint_mismatches(
+    tmp_path: Path,
+    sample_face_payload: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the source video at the same path is edited (size or mtime
+    delta), the cached fingerprint no longer matches the current one and
+    we MUST re-run the vision adapter rather than reuse stale frames."""
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    cache_path = workspace / VISION_CACHE_FILENAME
+    cache_path.write_text(
+        json.dumps(
+            {
+                "metadata": {
+                    "model": "retinaface-resnet50-raft-scenedetect",
+                    "source_fingerprint": "deadbeefcafe",
+                },
+                "payload": {"frames": sample_face_payload["frames"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[Path] = []
+
+    def fake_analyze(path: Path, *, config: VisionConfig) -> dict:
+        calls.append(path)
+        return _fake_analyzer_result(sample_face_payload)
+
+    monkeypatch.setattr("clippos.pipeline.vision.vision_adapter.analyze", fake_analyze)
+
+    payload = run_vision(video, workspace)
+
+    assert calls == [video]
+    assert payload == {"frames": sample_face_payload["frames"]}
+    refreshed = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert refreshed["metadata"]["source_fingerprint"] == compute_video_fingerprint(
+        video
+    )
+
+
+def test_run_vision_reruns_when_cache_predates_fingerprint(
+    tmp_path: Path,
+    sample_face_payload: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backward compat: pre-fingerprint cache files have no
+    `source_fingerprint` metadata. Treat as miss + warn so a stale
+    workspace from before this change can't silently serve mismatched
+    frames."""
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    cache_path = workspace / VISION_CACHE_FILENAME
+    cache_path.write_text(
+        json.dumps(
+            {
+                "metadata": {"model": "retinaface-resnet50-raft-scenedetect"},
+                "payload": {"frames": sample_face_payload["frames"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[Path] = []
+
+    def fake_analyze(path: Path, *, config: VisionConfig) -> dict:
+        calls.append(path)
+        return _fake_analyzer_result(sample_face_payload)
+
+    monkeypatch.setattr("clippos.pipeline.vision.vision_adapter.analyze", fake_analyze)
+
+    payload = run_vision(video, workspace)
+
+    assert calls == [video]
+    assert payload == {"frames": sample_face_payload["frames"]}
+    refreshed = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert refreshed["metadata"]["source_fingerprint"] == compute_video_fingerprint(
+        video
+    )
 
 
 def test_run_vision_reruns_when_cached_model_mismatches(

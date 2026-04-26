@@ -243,6 +243,15 @@ def resolve_scores(workspace_dir: Path) -> list[ClipScore] | None:
 
     response_by_hash: dict[str, ClipScore] = {}
     if response is not None:
+        expected_hashes = {brief.clip_hash for brief in request.clips}
+        returned_hashes = {clip_score.clip_hash for clip_score in response.scores}
+        extras = returned_hashes - expected_hashes
+        if extras:
+            raise ScoringResponseError(
+                f"{SCORING_RESPONSE_FILENAME} returned unexpected clip_hash "
+                "entries not present in scoring-request.json: "
+                + ", ".join(sorted(repr(h) for h in extras))
+            )
         for clip_score in response.scores:
             response_by_hash[clip_score.clip_hash] = clip_score
 
