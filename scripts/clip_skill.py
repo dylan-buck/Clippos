@@ -91,8 +91,8 @@ def build_parser() -> argparse.ArgumentParser:
             "Persist CLIPPOS_ROOT (the absolute path to the Clippos "
             "checkout) so the skill prologue can resolve it even when the "
             "harness does not set CLAUDE_PLUGIN_ROOT or HERMES_SKILL_DIR. "
-            "install.sh calls this automatically; set it manually for dev "
-            "checkouts."
+            "scripts/bootstrap-venv.sh calls this automatically as its "
+            "last step; set it manually for dev checkouts."
         ),
     )
     config_write.set_defaults(func=cmd_config_write)

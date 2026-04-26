@@ -6,11 +6,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_skill_surface_files_exist() -> None:
     assert (ROOT / "SKILL.md").exists()
-    assert (ROOT / "install.sh").exists()
+    assert (ROOT / "HERMES_SETUP.md").exists()
     assert (ROOT / "commands" / "clip.md").exists()
     assert (ROOT / "commands" / "clip-config.md").exists()
     assert (ROOT / ".claude-plugin" / "plugin.json").exists()
+    assert (ROOT / ".claude-plugin" / "marketplace.json").exists()
     assert (ROOT / ".codex-plugin" / "plugin.json").exists()
+    assert (ROOT / ".agents" / "plugins" / "marketplace.json").exists()
+    # The universal first-run venv bootstrap script that all three install
+    # paths invoke (Claude Code lazy on first /clip, Codex lazy on first
+    # /clip, Hermes explicitly post-clone).
+    bootstrap = ROOT / "scripts" / "bootstrap-venv.sh"
+    assert bootstrap.exists()
+    assert bootstrap.stat().st_mode & 0o111, "bootstrap-venv.sh must be executable"
 
 
 def test_clip_command_invokes_clip_skill() -> None:
@@ -28,11 +36,52 @@ def test_skill_instructions_reference_helper_script() -> None:
     assert "approved" in skill
 
 
-def test_readme_documents_install_one_liner() -> None:
+def test_readme_documents_native_install_per_harness() -> None:
+    """Each harness installs via its native marketplace / setup flow.
+    There is no top-level install.sh — that pattern was deleted in
+    favor of per-harness native commands (mirrors mvanhorn/last30days-
+    skill). The README must document all three canonical commands."""
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "install.sh | bash" in readme
-    assert "CLIPPOS_HARNESS" in readme
+    # Claude Code: native plugin marketplace.
+    assert "/plugin marketplace add dylan-buck/Clippos" in readme
+    # Codex: native marketplace add (codex-cli >= 0.121).
+    assert "codex marketplace add dylan-buck/Clippos" in readme
+    # Hermes: clone + bootstrap (no marketplace yet; HERMES_SETUP.md
+    # is the canonical Hermes guide).
+    assert "git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clip" in readme
+    assert "bootstrap-venv.sh" in readme
+    assert "HERMES_SETUP.md" in readme
+
+
+def test_claude_marketplace_json_exposes_clip_plugin() -> None:
+    """The .claude-plugin/marketplace.json is what makes
+    `/plugin marketplace add dylan-buck/Clippos` work — without it,
+    Claude Code returns a 404 from the plugin command. Lock the
+    minimum required keys so a future edit can't silently break
+    install."""
+    import json
+    payload = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
+    assert payload.get("name")
+    assert isinstance(payload.get("plugins"), list)
+    plugin_names = [p.get("name") for p in payload["plugins"]]
+    assert "clip" in plugin_names, (
+        "marketplace.json must list a `clip` plugin entry — that's the "
+        "name Claude Code uses when surfacing /clip:* slash commands."
+    )
+
+
+def test_codex_marketplace_json_exposes_clip_plugin() -> None:
+    """The .agents/plugins/marketplace.json is what makes
+    `codex marketplace add dylan-buck/Clippos` work — Codex CLI reads
+    this file from the cloned repo and registers the plugin in
+    ~/.codex/config.toml. Verified against codex-cli 0.121.0."""
+    import json
+    payload = json.loads((ROOT / ".agents" / "plugins" / "marketplace.json").read_text())
+    assert payload.get("name")
+    assert isinstance(payload.get("plugins"), list)
+    plugin_names = [p.get("name") for p in payload["plugins"]]
+    assert "clip" in plugin_names
 
 
 def test_skill_is_hermes_first_with_claude_codex_fallback() -> None:
@@ -100,8 +149,10 @@ def test_pyproject_pins_python_and_engine_dep_set() -> None:
     """
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
-    # Python pin must close the upper bound while install.sh is intentionally
-    # bootstrapping Python 3.12.
+    # Python pin must close the upper bound. bootstrap-venv.sh probes
+    # for a Python in [3.12, 3.13) and exits with a clear message
+    # otherwise — keep the pyproject pin and the script's range in
+    # lockstep.
     assert 'requires-python = ">=3.12,<3.13"' in pyproject
 
     # Critical pins. Keep the torch / WhisperX / pyannote stack in sync;

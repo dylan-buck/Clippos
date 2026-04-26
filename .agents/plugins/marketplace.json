@@ -1,0 +1,23 @@
+{
+  "name": "Clippos",
+  "interface": {
+    "displayName": "Clippos"
+  },
+  "metadata": {
+    "description": "Local video-clipping plugin: Whisper + SpeechBrain + RetinaFace + RAFT pipeline drives an agent-authored brief that scores per-clip; renders 9:16 / 1:1 / 16:9 with ASS captions burned in."
+  },
+  "plugins": [
+    {
+      "name": "clip",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

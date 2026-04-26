@@ -230,8 +230,9 @@ def test_probe_engine_imports_handles_non_importerror_failures(
 
 def test_config_write_root_persists_clippos_root(tmp_path: Path) -> None:
     """--root is the escape hatch when CLAUDE_PLUGIN_ROOT does not expand
-    inside command shims (Anthropic issue #9354). install.sh calls it
-    automatically; dev users can call it manually."""
+    inside command shims (Anthropic issue #9354). bootstrap-venv.sh
+    calls it automatically as its last step; dev users can call it
+    manually."""
     config_path = tmp_path / ".env"
     repo_root = Path(__file__).resolve().parents[2]
 

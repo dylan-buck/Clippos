@@ -21,40 +21,77 @@ Designed Hermes-first. Works anywhere.
 > the pipeline is compute-heavy. Read [Hardware requirements](#hardware-requirements)
 > before installing — 16 GB RAM is the practical floor.
 
-Shortest path:
+Each harness installs Clippos via its native plugin mechanism. No
+top-level install script — the per-harness commands below are
+canonical.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/dylan-buck/Clippos/main/install.sh | bash
+| Harness         | Install command                                               | Command surface                          |
+| --------------- | ------------------------------------------------------------- | ---------------------------------------- |
+| **Claude Code** | `/plugin marketplace add dylan-buck/Clippos`                  | `/clip:clip`, `/clip:clip-config`, `/clip:clip-package` |
+| **Codex**       | `codex marketplace add dylan-buck/Clippos`                    | `/clip`, `/clip-config`, `/clip-package` |
+| **Hermes**      | `git clone … ~/.hermes/skills/clip && bash …/bootstrap-venv.sh` | `/clip`, `/clip config`, `/clip package` |
+| **Any harness** | Clone, run `bootstrap-venv.sh`, drive `scripts/hermes_clip.py`    | `hermes_clip.py advance --source ...`    |
+
+All four paths resolve to the same `SKILL.md` and the same helper
+scripts.
+
+### Claude Code
+
+From inside Claude Code:
+
+```text
+/plugin marketplace add dylan-buck/Clippos
+/plugin install clip@Clippos
 ```
 
-That clones the repo into `~/.local/share/clippos`, creates `.venv`,
-installs the engine extras, and links the `clip` skill into Hermes, Claude
-Code, and Codex skill directories. Tune it with environment variables, e.g.
-`CLIPPOS_HARNESS=hermes`, `CLIPPOS_INSTALL_DIR=/path/to/clippos`, or
-`CLIPPOS_EXTRAS=none`.
+The marketplace registers the repo and Claude Code clones it into
+`~/.claude/plugins/cache/Clippos/clip/<sha>/`. The first `/clip:clip`
+invocation auto-runs `scripts/bootstrap-venv.sh` once to create the
+`.venv` and pip-install the engine extras (~5 min, ~700 MB of wheels).
+Subsequent calls skip the bootstrap.
 
-| Harness            | Install                                                                             | Command surface                          |
-| ------------------ | ----------------------------------------------------------------------------------- | ---------------------------------------- |
-| **Hermes**         | `CLIPPOS_HARNESS=hermes curl -fsSL .../install.sh \| bash` or symlink manually      | `/clip`, `/clip config`, `/clip package` |
-| **Claude Code**    | `CLIPPOS_HARNESS=claude curl -fsSL .../install.sh \| bash` or plugin install        | `/clip`, `/clip-config`, `/clip-package` |
-| **Codex**          | `CLIPPOS_HARNESS=codex curl -fsSL .../install.sh \| bash` or plugin loader          | `/clip`, `/clip-config`, `/clip-package` |
-| **Any harness**    | Clone the repo, export `CLIPPOS_ROOT=/abs/path/to/clippos`, run the scripts         | `hermes_clip.py advance --source ...`    |
+```text
+/clip:clip /absolute/path/video.mp4
+/clip:clip-config --output-dir ~/Documents/Clippos
+/clip:clip-package
+```
 
-All four install paths resolve to the same `SKILL.md` and the same helper
-scripts. The one-liner does the local engine setup; manual installs can use
-the per-harness steps below and then the [local dev setup](#local-dev-setup).
+### Codex
+
+From inside the Codex CLI:
+
+```text
+codex marketplace add dylan-buck/Clippos
+```
+
+Then enable the `clip` plugin from the marketplace via the Codex TUI
+(`/plugins`) or by adding to `~/.codex/config.toml`:
+
+```toml
+[plugins."clip@Clippos"]
+enabled = true
+```
+
+Codex clones the repo into `~/.codex/plugins/cache/Clippos/clip/<sha>/`
+and the same first-run bootstrap behavior applies — `bootstrap-venv.sh`
+runs on first `/clip` to create the `.venv`. Slash commands are
+identical to Claude Code (without the `clip:` namespace prefix).
 
 ### Hermes
 
+Hermes is a self-contained workspace and does not have a marketplace
+yet. Install directly into your Hermes skill directory and run the
+bootstrap script:
+
 ```bash
-# From the project root
-mkdir -p ~/.hermes/skills
-ln -s "$(pwd)" ~/.hermes/skills/clip
+git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clip
+bash ~/.hermes/skills/clip/scripts/bootstrap-venv.sh
 ```
 
-Start a fresh Hermes session and the `/clip` skill appears automatically.
-Hermes reads `SKILL.md` directly and substitutes `${HERMES_SKILL_DIR}` with
-the installed skill directory. Typical flow:
+Start a fresh Hermes session and the `/clip` skill appears
+automatically. See [HERMES_SETUP.md](HERMES_SETUP.md) for the full
+guide (prerequisites, troubleshooting, update flow). Typical Hermes
+usage:
 
 ```text
 /clip /absolute/path/video.mp4
@@ -63,61 +100,34 @@ the installed skill directory. Typical flow:
 /clip package
 ```
 
-Attachment URLs dropped into Discord/Telegram are detected and downloaded
-directly (yt-dlp is skipped for signed CDN URLs).
-
-### Claude Code
-
-If you have Claude Code's plugin system:
-
-```bash
-# Quickest — point Claude Code at the local plugin
-/plugin install /absolute/path/to/clippos/.claude-plugin
-```
-
-Or copy the repo into `~/.claude/skills/clip`. Claude Code exposes three
-slash commands via the `commands/*.md` shims:
-
-```text
-/clip /absolute/path/video.mp4
-/clip-config --output-dir ~/Documents/Clippos
-/clip-package
-```
-
-Claude Code substitutes `${CLAUDE_PLUGIN_ROOT}` in the prologue
-automatically.
-
-### Codex
-
-Codex follows the same plugin shape as Claude Code. Point your Codex plugin
-loader at `.codex-plugin/plugin.json` (or symlink the repo into Codex's
-skill directory). Commands are identical to Claude Code: `/clip`,
-`/clip-config`, `/clip-package`.
+Attachment URLs dropped into Discord/Telegram are detected and
+downloaded directly (yt-dlp is skipped for signed CDN URLs).
 
 ### Any other harness (generic)
 
-If you're running a harness without a built-in plugin system (custom agent
-framework, bare terminal, a provider SDK), install manually:
+If you're running a harness without a plugin marketplace (custom agent
+framework, bare terminal, a provider SDK), clone manually and run the
+same bootstrap script:
 
 ```bash
 git clone https://github.com/dylan-buck/Clippos
-cd Clippos
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -e ".[engine,dev]"
-export CLIPPOS_ROOT="$(pwd)"
+bash Clippos/scripts/bootstrap-venv.sh
+export CLIPPOS_ROOT="$(pwd)/Clippos"
 ```
 
-Then drive the pipeline with `hermes_clip.py`:
+Then drive the pipeline with `hermes_clip.py` (the harness-agnostic
+state-machine driver):
 
 ```bash
 "$CLIPPOS_ROOT/.venv/bin/python" "$CLIPPOS_ROOT/scripts/hermes_clip.py" \
   advance --source /absolute/path/video.mp4
 ```
 
-The script prints structured JSON with a `next_action`: `brief`, `score`,
-`package`, `done-renders`, `done-package`, `error`, or `configure`. Your
-harness reads the JSON, writes the requested response file when prompted,
-then calls `advance --workspace "$WORKSPACE"` again to continue.
+The script prints structured JSON with a `next_action`: `brief`,
+`score`, `package`, `done-renders`, `done-package`, `error`, or
+`configure`. Your harness reads the JSON, writes the requested
+response file when prompted, then calls `advance --workspace
+"$WORKSPACE"` again to continue.
 
 ## Hardware requirements
 
@@ -164,7 +174,12 @@ inputs do not blow up memory — only duration scales peak RAM.
 
 Pick any known-good local video 5–10 minutes long.
 
-1. **Install.** `curl -fsSL https://raw.githubusercontent.com/dylan-buck/Clippos/main/install.sh | bash`.
+1. **Install.** Pick the install command for your harness from the
+   [Install matrix](#install) above. Claude Code and Codex install via
+   their native marketplace (`/plugin marketplace add` and
+   `codex marketplace add` respectively) and auto-bootstrap the venv
+   on the first `/clip` call. Hermes is a `git clone` + one bash
+   script.
 2. **Configure** (optional). In your agent, run `/clip config --output-dir
    ~/Documents/Clippos` (Hermes) or `/clip-config ...` (Claude Code /
    Codex). Writes the `.env`. **No HuggingFace token needed** —
@@ -456,15 +471,16 @@ for the full rubric, schema, and caching rules.
   you want, then `--stage render`.
 - **Linux and Windows install paths are not dogfood-verified.** The
   pin set is resolver-clean on macOS arm64 (verified under both pip
-  and `uv sync`) but neither install.sh nor the engine extras have been
-  cold-installed on Linux x86_64 or Windows. Both should work — TF
-  and torch wheels exist for both — but verification is pending. See
-  [docs/pre-ship-fixes.md](docs/pre-ship-fixes.md).
-- **NVIDIA / CUDA wheels require manual install on Linux.** install.sh
-  pulls the CPU `torch==2.8.0` wheel by default. Linux users with
-  NVIDIA GPUs need to install the CUDA-suffixed wheel manually
-  (e.g. `pip install torch==2.8.0+cu124 --index-url
-  https://download.pytorch.org/whl/cu124`). install.sh does not
+  and `uv sync`) but the engine extras + `bootstrap-venv.sh` have not
+  been cold-installed on Linux x86_64 or Windows. Both should work —
+  TF and torch wheels exist for both — but verification is pending.
+  See [docs/pre-ship-fixes.md](docs/pre-ship-fixes.md).
+- **NVIDIA / CUDA wheels require manual install on Linux.**
+  `bootstrap-venv.sh` pulls the CPU `torch==2.8.0` wheel by default.
+  Linux users with NVIDIA GPUs need to install the CUDA-suffixed wheel
+  manually after bootstrap completes (e.g. `pip install
+  torch==2.8.0+cu124 --index-url
+  https://download.pytorch.org/whl/cu124`). The script does not
   auto-detect CUDA.
 - **Mining heuristics are English-tuned.** Both monologue keyword
   buckets (controversy, taboo, etc.) and interview keyword buckets

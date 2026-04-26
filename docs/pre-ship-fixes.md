@@ -15,46 +15,21 @@ verification gate at the bottom passes cold on a fresh venv.
 
 ## Critical (block install on common machines)
 
-### F1. `install.sh find_python` accepts wrong Python version
+### F1. Python version check in the bootstrap script — RESOLVED
 
-**Symptom.** On macOS with the current Homebrew default (Python 3.14)
-and no python3.12 installed, `install.sh` proceeds against an
-unsupported interpreter, then fails deep inside the pip resolver on
-TensorFlow wheels (TF caps at 3.12).
+**Status.** install.sh was deleted in favor of native plugin
+marketplaces per harness (see [README install matrix](../README.md#install)).
+The Python version check logic moved to `scripts/bootstrap-venv.sh`,
+which every install path invokes (Claude Code lazy on first /clip,
+Codex lazy on first /clip, Hermes explicitly post-clone). Verified at
+`scripts/bootstrap-venv.sh:18-54` — probes each candidate Python with
+a `(3,12) <= sys.version_info < (3,13)` check and exits with brew /
+apt / pacman hints when nothing qualifies.
 
-**Root cause.** `find_python` only checks `command -v` exists, not
-version. The error string says "Python 3.12+ is required" but the
-script doesn't enforce it.
-
-**Fix.** Replace `find_python` so it probes each candidate with a real
-version check:
-
-```bash
-find_python() {
-  if [ -n "${CLIPPOS_BOOTSTRAP_PYTHON:-}" ]; then
-    if "$CLIPPOS_BOOTSTRAP_PYTHON" -c 'import sys; sys.exit(0 if (3,12) <= sys.version_info < (3,13) else 1)' >/dev/null 2>&1; then
-      printf '%s\n' "$CLIPPOS_BOOTSTRAP_PYTHON"; return
-    fi
-    printf 'CLIPPOS_BOOTSTRAP_PYTHON=%s does not satisfy 3.12.x\n' \
-      "$CLIPPOS_BOOTSTRAP_PYTHON" >&2
-    exit 1
-  fi
-  for candidate in python3.12 python3 python; do
-    if command -v "$candidate" >/dev/null 2>&1 && \
-       "$candidate" -c 'import sys; sys.exit(0 if (3,12) <= sys.version_info < (3,13) else 1)' >/dev/null 2>&1; then
-      printf '%s\n' "$candidate"; return
-    fi
-  done
-  printf 'Need Python 3.12 (TensorFlow wheels cap at 3.12, our pyproject pins <3.13).\n' >&2
-  printf 'On macOS: brew install python@3.12\n' >&2
-  printf 'On Debian/Ubuntu: sudo apt install python3.12 python3.12-venv\n' >&2
-  exit 1
-}
-```
-
-Update the calling site to drop the redundant `command -v` check (the
-new `find_python` already exits non-zero with a clear message when
-nothing qualifies).
+**Symptom (historical).** On macOS with the Homebrew default (Python
+3.14) and no python3.12 installed, the previous install path proceeded
+against an unsupported interpreter, then failed deep inside the pip
+resolver on TensorFlow wheels (TF caps at 3.12).
 
 ---
 
@@ -181,8 +156,8 @@ discovered. Pull latest before editing the files above.
   `${CLAUDE_PLUGIN_ROOT}` expansion bug (Anthropic issue #9354) in
   the wild.
 - `scripts/clip_skill.py config-write --root <path>` — new flag that
-  persists `CLIPPOS_ROOT` to the config file with validation. `install.sh`
-  now calls it post-install via `persist_clippos_root`.
+  persists `CLIPPOS_ROOT` to the config file with validation.
+  `scripts/bootstrap-venv.sh` calls it post-install as its last step.
 - 370 tests passing, ruff clean.
 
 ---
@@ -200,31 +175,37 @@ fresh `uv sync` because whisperx's metadata declared
 contradiction; uv didn't. Verifying both keeps that class of bug from
 recurring.
 
-### Track A — pip / `install.sh` (the published one-liner)
+### Track A — pip via `bootstrap-venv.sh` (the install path each harness invokes)
 
 ```bash
-# 1. Wipe any prior install + venv
+# 1. Wipe any prior install + venv (Hermes, Claude, Codex caches; legacy
+#    install dir from when there was a top-level install.sh).
 rm -rf ~/.local/share/clippos /tmp/clippos-test-venv \
-       ~/.hermes/skills/clip ~/.claude/skills/clip ~/.codex/skills/clip
+       ~/.hermes/skills/clip \
+       ~/.claude/plugins/cache/Clippos \
+       ~/.codex/plugins/cache/Clippos \
+       ~/.config/clippos
 
-# 2. Run the one-liner exactly as a user would
-curl -fsSL https://raw.githubusercontent.com/dylan-buck/Clippos/main/install.sh | bash
+# 2. Simulate the Hermes install path (the most explicit; Claude / Codex
+#    marketplace adds clone into versioned cache dirs we don't control).
+git clone https://github.com/dylan-buck/Clippos ~/.hermes/skills/clip
+bash ~/.hermes/skills/clip/scripts/bootstrap-venv.sh
 
 # 3. Smoke-test engine imports without touching code
-~/.local/share/clippos/.venv/bin/python -c "
+~/.hermes/skills/clip/.venv/bin/python -c "
 import whisperx, speechbrain, silero_vad, cv2, retinaface, \
        torch, torchvision, scenedetect, matplotlib
 print('engine ok:', torch.__version__, whisperx.__version__)
 "
 
 # 4. Run preflight via the published skill path
-~/.local/share/clippos/.venv/bin/python \
-  ~/.local/share/clippos/scripts/hermes_clip.py preflight
+~/.hermes/skills/clip/.venv/bin/python \
+  ~/.hermes/skills/clip/scripts/hermes_clip.py preflight
 # Expect ready=true, no engine:* entries in `missing`.
 
 # 5. Real /clip end-to-end on a short test video (5–10 min)
-~/.local/share/clippos/.venv/bin/python \
-  ~/.local/share/clippos/scripts/hermes_clip.py advance \
+~/.hermes/skills/clip/.venv/bin/python \
+  ~/.hermes/skills/clip/scripts/hermes_clip.py advance \
   --source /absolute/path/to/short-test.mp4
 # Expect: workspace ready, mine completes, scoring handoff emitted.
 ```
@@ -261,8 +242,8 @@ uv lock --check
 Both tracks must pass cold. If Track A passes but Track B fails, the
 pin set has metadata contradictions even when it works in pip — fix
 the pins (see F3) before merging. If Track B passes but Track A fails,
-something has diverged in install.sh's pip path; investigate before
-shipping.
+something has diverged in `bootstrap-venv.sh`'s pip path; investigate
+before shipping.
 
 If any step in either track fails, the install path is not yet ready
 for public release. Add the failure mode to this doc and fix it before
@@ -301,4 +282,4 @@ deferred.
   CUDA-suffixed wheel (e.g. `torch==2.8.0+cu124`). Document the
   override pattern (`pip install torch==2.8.0+cu124 --index-url
   https://download.pytorch.org/whl/cu124`) rather than trying to
-  detect it in install.sh.
+  detect it in `bootstrap-venv.sh`.

@@ -7,13 +7,16 @@ allowed-tools: [Bash, Read, Write, AskUserQuestion]
 Invoke the `clip` skill's configuration workflow with the user's arguments:
 $ARGUMENTS
 
-Resolve `CLIPPOS_ROOT` with the prologue documented in `SKILL.md` (env var
-> `HERMES_SKILL_DIR` > `CLAUDE_PLUGIN_ROOT` > `~/.hermes/skills/clip` >
-`~/.claude/skills/clip` > `~/.codex/skills/clip` >
-`~/.local/share/clippos` > `CLIPPOS_ROOT` line in
-`~/.config/clippos/.env` > `$PWD`). Each candidate must contain
-`scripts/hermes_clip.py`. Then resolve `CLIPPOS_PYTHON` to
-`$CLIPPOS_ROOT/.venv/bin/python` when executable, otherwise `python3`.
+Resolve `CLIPPOS_ROOT` with the prologue documented in `SKILL.md` (env
+var > `HERMES_SKILL_DIR` > `CLAUDE_PLUGIN_ROOT` > `~/.hermes/skills/clip`
+> `~/.claude/skills/clip` > `~/.codex/skills/clip` > newest match in
+`~/.claude/plugins/cache/<marketplace>/clip/<sha>` /
+`~/.codex/plugins/cache/<marketplace>/clip/<sha>` > `CLIPPOS_ROOT`
+line in `~/.config/clippos/.env` > `$PWD`). Each candidate must contain
+`scripts/hermes_clip.py`. If `$CLIPPOS_ROOT/.venv` does not exist, run
+`bash $CLIPPOS_ROOT/scripts/bootstrap-venv.sh` once to create it. Then
+resolve `CLIPPOS_PYTHON` to `$CLIPPOS_ROOT/.venv/bin/python` when
+executable, otherwise `python3`.
 
 Run `"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-check`
 first. The payload's top-level `ready` field reflects bins, render path, and

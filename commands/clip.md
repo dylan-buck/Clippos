@@ -6,12 +6,16 @@ allowed-tools: [Bash, Read, Write, AskUserQuestion]
 
 Invoke the `clip` skill with the user's arguments: $ARGUMENTS
 
-Resolve `CLIPPOS_ROOT` with the prologue documented in `SKILL.md` (env var
-> `HERMES_SKILL_DIR` > `CLAUDE_PLUGIN_ROOT` > `~/.hermes/skills/clip` >
-`~/.claude/skills/clip` > `~/.codex/skills/clip` >
-`~/.local/share/clippos` > `CLIPPOS_ROOT` line in
-`~/.config/clippos/.env` > `$PWD`). Each candidate must contain
-`scripts/hermes_clip.py`. Then resolve `CLIPPOS_PYTHON` to
+Resolve `CLIPPOS_ROOT` with the prologue documented in `SKILL.md` (env
+var > `HERMES_SKILL_DIR` > `CLAUDE_PLUGIN_ROOT` > `~/.hermes/skills/clip`
+> `~/.claude/skills/clip` > `~/.codex/skills/clip` > newest match in
+`~/.claude/plugins/cache/<marketplace>/clip/<sha>` /
+`~/.codex/plugins/cache/<marketplace>/clip/<sha>` > `CLIPPOS_ROOT`
+line in `~/.config/clippos/.env` > `$PWD`). Each candidate must contain
+`scripts/hermes_clip.py`. If `$CLIPPOS_ROOT/.venv` does not exist, run
+`bash $CLIPPOS_ROOT/scripts/bootstrap-venv.sh` once to create it (this
+is the auto-bootstrap for native plugin-marketplace installs that don't
+run pip themselves). Then resolve `CLIPPOS_PYTHON` to
 `$CLIPPOS_ROOT/.venv/bin/python` when executable, otherwise `python3`.
 
 Run the full loop: prepare the source, mine candidates, score every candidate

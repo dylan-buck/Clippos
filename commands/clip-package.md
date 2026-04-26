@@ -6,13 +6,16 @@ allowed-tools: [Bash, Read, Write]
 
 Invoke the `clip` skill's packaging workflow for: $ARGUMENTS
 
-Resolve `CLIPPOS_ROOT` with the prologue documented in `SKILL.md` (env var
-> `HERMES_SKILL_DIR` > `CLAUDE_PLUGIN_ROOT` > `~/.hermes/skills/clip` >
-`~/.claude/skills/clip` > `~/.codex/skills/clip` >
-`~/.local/share/clippos` > `CLIPPOS_ROOT` line in
-`~/.config/clippos/.env` > `$PWD`). Each candidate must contain
-`scripts/hermes_clip.py`. Then resolve `CLIPPOS_PYTHON` to
-`$CLIPPOS_ROOT/.venv/bin/python` when executable, otherwise `python3`.
+Resolve `CLIPPOS_ROOT` with the prologue documented in `SKILL.md` (env
+var > `HERMES_SKILL_DIR` > `CLAUDE_PLUGIN_ROOT` > `~/.hermes/skills/clip`
+> `~/.claude/skills/clip` > `~/.codex/skills/clip` > newest match in
+`~/.claude/plugins/cache/<marketplace>/clip/<sha>` /
+`~/.codex/plugins/cache/<marketplace>/clip/<sha>` > `CLIPPOS_ROOT`
+line in `~/.config/clippos/.env` > `$PWD`). Each candidate must contain
+`scripts/hermes_clip.py`. If `$CLIPPOS_ROOT/.venv` does not exist, run
+`bash $CLIPPOS_ROOT/scripts/bootstrap-venv.sh` once to create it. Then
+resolve `CLIPPOS_PYTHON` to `$CLIPPOS_ROOT/.venv/bin/python` when
+executable, otherwise `python3`.
 
 Resolve the target workspace (either the argument, or the most recent
 `skill-jobs/*/jobs/<job_id>/` directory under the configured output dir). Then:

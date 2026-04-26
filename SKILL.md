@@ -133,26 +133,46 @@ skill directory across harnesses:
 # scripts/hermes_clip.py to be accepted.
 # Why so many fallbacks: Hermes substitutes HERMES_SKILL_DIR reliably, but
 # Claude Code's CLAUDE_PLUGIN_ROOT does not always expand inside command
-# bash blocks (Anthropic issue #9354), so we also probe the symlinks
-# install.sh creates and the persisted CLIPPOS_ROOT in the config file.
+# bash blocks (Anthropic issue #9354), so we also probe known install
+# locations (Claude Code plugin cache, Codex plugin cache, Hermes skill
+# dir) and the persisted CLIPPOS_ROOT in the config file.
 for candidate in "${CLIPPOS_ROOT:-}" "${HERMES_SKILL_DIR:-}" "${CLAUDE_PLUGIN_ROOT:-}" \
                  "$HOME/.hermes/skills/clip" "$HOME/.claude/skills/clip" \
-                 "$HOME/.codex/skills/clip" "$HOME/.local/share/clippos"; do
+                 "$HOME/.codex/skills/clip"; do
   if [ -n "$candidate" ] && [ -f "$candidate/scripts/hermes_clip.py" ]; then
     CLIPPOS_ROOT="$candidate"; break
   fi
 done
+# Claude Code + Codex marketplace installs land under a versioned cache
+# (~/.claude/plugins/cache/<marketplace>/clip/<sha>, ~/.codex/plugins/
+# cache/<marketplace>/clip/<sha>); pick the newest one if no env var hit.
+if [ -z "${CLIPPOS_ROOT:-}" ]; then
+  for cache_root in "$HOME/.claude/plugins/cache" "$HOME/.codex/plugins/cache"; do
+    [ -d "$cache_root" ] || continue
+    candidate="$(find "$cache_root" -mindepth 3 -maxdepth 3 -type d -name "clip" -path "*/clip" 2>/dev/null | head -1)"
+    [ -n "$candidate" ] && [ -f "$candidate/scripts/hermes_clip.py" ] && \
+      { CLIPPOS_ROOT="$candidate"; break; }
+  done
+fi
 if [ -z "${CLIPPOS_ROOT:-}" ] && [ -f "$HOME/.config/clippos/.env" ]; then
   CLIPPOS_ROOT="$(awk -F= '/^CLIPPOS_ROOT=/{gsub(/^["'"'"']|["'"'"']$/,"",$2); print $2; exit}' "$HOME/.config/clippos/.env")"
 fi
 [ -n "${CLIPPOS_ROOT:-}" ] && [ -f "$CLIPPOS_ROOT/scripts/hermes_clip.py" ] || \
   { [ -f "$PWD/scripts/hermes_clip.py" ] && CLIPPOS_ROOT="$PWD"; }
+# v1.x bootstrap: native plugin managers (Claude Code's /plugin, Codex's
+# `codex marketplace add`) clone the repo but do not run pip — there is
+# no PostInstall hook for engine extras. The bootstrap script creates a
+# .venv at the install root and pip-installs the engine extras (~5 min,
+# ~700 MB of wheels). Idempotent — no-op once the .venv exists. Hermes
+# users run this script directly post-clone, so they don't pay this
+# cost on first /clip.
+[ -d "$CLIPPOS_ROOT/.venv" ] || bash "$CLIPPOS_ROOT/scripts/bootstrap-venv.sh"
 CLIPPOS_PYTHON="${CLIPPOS_PYTHON:-$CLIPPOS_ROOT/.venv/bin/python}"
 [ -x "$CLIPPOS_PYTHON" ] || CLIPPOS_PYTHON="$(command -v python3)"
 "$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clip_skill.py" config-check
 ```
 
-If discovery fails (no env var, no install symlinks, no persisted config,
+If discovery fails (no env var, no install paths, no persisted config,
 not in the repo), persist the path once and every future invocation
 resolves cleanly:
 
@@ -161,7 +181,7 @@ resolves cleanly:
   config-write --root "$CLIPPOS_ROOT"
 ```
 
-`install.sh` runs that step automatically.
+`bootstrap-venv.sh` runs that step automatically as its last action.
 
 ### Diarization (zero-config by default)
 
