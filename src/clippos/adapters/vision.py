@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -43,13 +44,19 @@ class RawFace:
 
 def analyze(video_path: Path, *, config: VisionConfig | None = None) -> dict:
     cfg = config or VisionConfig()
+    _status(f"Vision: sampling frames at {cfg.sample_fps:g} fps.")
     samples = _sample_frames(video_path, cfg)
     if not samples:
         raise VisionError(f"No frames could be sampled from {video_path}")
+    _status(f"Vision: sampled {len(samples)} frame(s).")
+    _status("Vision: detecting shot changes.")
     shot_timestamps = _detect_shot_changes(video_path, threshold=cfg.scene_threshold)
+    _status(f"Vision: found {len(shot_timestamps)} shot change(s).")
+    _status("Vision: detecting faces in sampled frames.")
     face_series = _detect_faces_per_frame(
         samples, min_confidence=cfg.face_min_confidence
     )
+    _status("Vision: estimating optical-flow motion with RAFT.")
     motion_magnitudes = _compute_motion_per_frame(samples)
     smoothed_faces = smooth_face_trajectory(
         samples,
@@ -63,7 +70,12 @@ def analyze(video_path: Path, *, config: VisionConfig | None = None) -> dict:
         motion_magnitudes=motion_magnitudes,
         shot_timestamps=shot_timestamps,
     )
+    _status("Vision: finished frame analysis.")
     return {"model": DEFAULT_MODEL, "frames": frames}
+
+
+def _status(message: str) -> None:
+    print(f"[clippos] {message}", file=sys.stderr, flush=True)
 
 
 def smooth_face_trajectory(
@@ -224,7 +236,9 @@ def _detect_faces_per_frame(
 
     model = RetinaFace.build_model()
     results: list[RawFace | None] = []
-    for sample in samples:
+    for index, sample in enumerate(samples, start=1):
+        if index == 1 or index % 50 == 0 or index == len(samples):
+            _status(f"Vision: face detection frame {index}/{len(samples)}.")
         bgr = cv2.cvtColor(sample.rgb, cv2.COLOR_RGB2BGR)
         detection = RetinaFace.detect_faces(
             bgr,
@@ -284,7 +298,12 @@ def _compute_motion_per_frame(samples: list[FrameSample]) -> list[float]:
 
     magnitudes: list[float] = [0.0]
     with torch.inference_mode():
-        for previous, current in zip(samples, samples[1:], strict=False):
+        total_pairs = max(len(samples) - 1, 0)
+        for index, (previous, current) in enumerate(
+            zip(samples, samples[1:], strict=False), start=1
+        ):
+            if index == 1 or index % 50 == 0 or index == total_pairs:
+                _status(f"Vision: RAFT motion pair {index}/{total_pairs}.")
             prev_tensor = _rgb_to_tensor(previous.rgb_small)
             curr_tensor = _rgb_to_tensor(current.rgb_small)
             prev_batch, curr_batch = preprocess(prev_tensor, curr_tensor)

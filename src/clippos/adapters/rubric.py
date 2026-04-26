@@ -6,6 +6,16 @@ RUBRIC_PROMPT = """\
 You are scoring short video clips pulled from a longer recording. Each clip in
 `clips` is a candidate for standalone short-form distribution. You must score
 every clip in the input and return strict JSON matching `response_schema`.
+Each clip includes transcript, speakers, deterministic mining signals, and
+(when available) a compact `visual_summary` with face presence, motion, and
+shot-change stats. Use the visual summary to judge visible action, reaction
+shots, and pacing; do not score purely from transcript when visual cues are
+present.
+
+If a request includes `video_brief`, treat it as a contextual lens, not a
+constraint. When the actual clips clearly diverge from the brief's expected
+patterns, prefer the clip evidence and mention the mismatch in `reasons`
+instead of forcing the score to match the brief.
 
 ## Rubric dimensions (each 0.0–1.0)
 

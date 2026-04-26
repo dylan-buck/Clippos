@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import statistics
+import sys
 from dataclasses import dataclass, field
 
 from clippos.models.candidate import CandidateClip
@@ -184,6 +185,10 @@ _WORD_RE = re.compile(r"\b[\w']+\b")
 _NUMERIC_RE = re.compile(r"\b\d+(?:[\.,]\d+)?\b|\b\d+(?:st|nd|rd|th)\b")
 
 
+def _status(message: str) -> None:
+    print(f"[clippos] {message}", file=sys.stderr, flush=True)
+
+
 @dataclass(frozen=True)
 class DurationPolicy:
     min_seconds: float = 15.0
@@ -284,6 +289,7 @@ class ScoredWindow:
     segments: tuple[TranscriptSegment, ...]
     signals: WindowSignals
     score: float
+    visual_summary: dict[str, object] | None = None
 
     @property
     def start_seconds(self) -> float:
@@ -326,6 +332,7 @@ def mine_windows(
     windows = enumerate_segment_windows(
         transcript_timeline.segments, cfg.duration_policy
     )
+    _status(f"Mining: scoring {len(windows)} transcript windows.")
     scored: list[ScoredWindow] = [
         _score_window(window, vision_timeline.frames, cfg) for window in windows
     ]
@@ -365,6 +372,11 @@ def mine_windows(
             minimum=minimum,
             max_overlap_ratio=cfg.max_overlap_ratio,
         )
+    _status(
+        "Mining: selected "
+        f"{min(len(selected), max_candidates)} candidate(s) "
+        f"({len(above_floor)} above score floor, target max {max_candidates})."
+    )
     return selected[:max_candidates]
 
 
@@ -710,7 +722,72 @@ def _score_window(
         segments=segments,
         signals=signals,
         score=_clamp01(positive - penalty),
+        visual_summary=_summarize_visual_context(frames, start, end),
     )
+
+
+def _summarize_visual_context(
+    frames: list[VisionFrame], start_seconds: float, end_seconds: float
+) -> dict[str, object]:
+    in_window = [
+        frame
+        for frame in frames
+        if start_seconds <= frame.timestamp_seconds < end_seconds
+    ]
+    duration = max(end_seconds - start_seconds, 1e-6)
+    if not in_window:
+        return {
+            "frame_count": 0,
+            "face_presence_ratio": 0.0,
+            "avg_motion": 0.0,
+            "peak_motion": 0.0,
+            "shot_change_count": 0,
+            "shot_change_rate_per_minute": 0.0,
+            "avg_face_center_x": None,
+            "avg_face_center_y": None,
+            "description": "No sampled vision frames landed inside this clip window.",
+        }
+
+    motions = [frame.motion_score for frame in in_window]
+    face_frames = [frame for frame in in_window if frame.primary_face is not None]
+    shot_change_count = sum(1 for frame in in_window if frame.shot_change)
+    face_ratio = len(face_frames) / len(in_window)
+    avg_motion = sum(motions) / len(motions)
+    peak_motion = max(motions)
+    avg_face_center_x = (
+        sum(frame.primary_face.center_x for frame in face_frames) / len(face_frames)
+        if face_frames
+        else None
+    )
+    avg_face_center_y = (
+        sum(frame.primary_face.center_y for frame in face_frames) / len(face_frames)
+        if face_frames
+        else None
+    )
+    description = (
+        f"faces in {face_ratio:.0%} of sampled frames; "
+        f"avg motion {avg_motion:.2f}, peak motion {peak_motion:.2f}; "
+        f"{shot_change_count} shot change(s)"
+    )
+    return {
+        "frame_count": len(in_window),
+        "face_presence_ratio": round(_clamp01(face_ratio), 4),
+        "avg_motion": round(_clamp01(avg_motion), 4),
+        "peak_motion": round(_clamp01(peak_motion), 4),
+        "shot_change_count": shot_change_count,
+        "shot_change_rate_per_minute": round(shot_change_count / (duration / 60.0), 4),
+        "avg_face_center_x": (
+            round(_clamp01(avg_face_center_x), 4)
+            if avg_face_center_x is not None
+            else None
+        ),
+        "avg_face_center_y": (
+            round(_clamp01(avg_face_center_y), 4)
+            if avg_face_center_y is not None
+            else None
+        ),
+        "description": description,
+    }
 
 
 def _greedy_deduplicate(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -160,8 +161,13 @@ def _run_mine_stage(
     video_path: Path,
     workspace_dir: Path,
 ) -> Path:
+    _status("Mine: building transcript timeline.")
     transcript = build_transcript_timeline(transcribe_video(video_path, workspace_dir))
+    _status(f"Mine: transcript has {len(transcript.segments)} segment(s).")
+    _status("Mine: building vision timeline.")
     vision = build_vision_timeline(analyze_video(video_path, workspace_dir))
+    _status(f"Mine: vision has {len(vision.frames)} sampled frame(s).")
+    _status(f"Mine: selecting up to {resolved_job.max_candidates} candidate clip(s).")
     windows = mine_windows(
         transcript, vision, max_candidates=resolved_job.max_candidates
     )
@@ -179,6 +185,7 @@ def _run_mine_stage(
         briefs=briefs,
     )
     request_path = write_scoring_request(workspace_dir, request)
+    _status(f"Mine: wrote scoring request with {len(briefs)} clip candidate(s).")
     # v1.1: also write brief-request.json so the harness has the prompt
     # ready when video_brief is enabled. We always write the request so
     # the harness can author a brief even if the orchestrator is later
@@ -191,6 +198,7 @@ def _run_mine_stage(
             transcript_timeline=transcript,
         )
         write_brief_request(workspace_dir, brief_request)
+        _status("Mine: wrote representative brief request.")
     return request_path
 
 
@@ -322,11 +330,14 @@ def _finalize_render_stage(
             "review-manifest.json has no approved candidates to render"
         )
 
+    _status("Render: loading transcript timeline.")
     transcript = build_transcript_timeline(transcribe_video(video_path, workspace_dir))
+    _status("Render: loading vision timeline.")
     vision = build_vision_timeline(analyze_video(video_path, workspace_dir))
 
     entries: list[dict] = []
     for candidate in approved_candidates:
+        _status(f"Render: planning clip {candidate.clip_id}.")
         manifest = build_render_plan(
             candidate=candidate,
             source_video=video_path,
@@ -337,7 +348,12 @@ def _finalize_render_stage(
             ratios=tuple(job.output_profile.ratios),
             caption_preset=job.output_profile.caption_preset,
         )
+        _status(
+            f"Render: rendering clip {candidate.clip_id} "
+            f"({len(manifest.outputs)} ratio(s))."
+        )
         render_clip(manifest)
+        _status(f"Render: finished clip {candidate.clip_id}.")
         manifest_path = render_manifest_path(workspace_dir, candidate.clip_id)
         write_json(manifest_path, manifest.model_dump(mode="json"))
         entries.append(
@@ -382,6 +398,10 @@ def _load_review_manifest(workspace_dir: Path) -> ReviewManifest | None:
         return None
     data = read_json(path)
     return ReviewManifest.model_validate(data)
+
+
+def _status(message: str) -> None:
+    print(f"[clippos] {message}", file=sys.stderr, flush=True)
 
 
 def _brief_to_candidate(brief: ClipBrief) -> CandidateClip:

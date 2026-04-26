@@ -244,6 +244,34 @@ def test_build_clip_brief_includes_transcript_speakers_and_signals() -> None:
     assert brief.mining_signals.spike_categories == ["controversy"]
 
 
+def test_build_clip_brief_includes_visual_summary_when_available() -> None:
+    segments = (_segment(text="Look at this reveal."),)
+    window = ScoredWindow(
+        segments=segments,
+        signals=_signals(),
+        score=0.75,
+        visual_summary={
+            "frame_count": 12,
+            "face_presence_ratio": 0.75,
+            "avg_motion": 0.42,
+            "peak_motion": 0.91,
+            "shot_change_count": 3,
+            "shot_change_rate_per_minute": 4.0,
+            "avg_face_center_x": 0.48,
+            "avg_face_center_y": 0.41,
+            "description": "faces in 75% of sampled frames; strong motion",
+        },
+    )
+    candidate = _candidate(start_seconds=0.0, end_seconds=8.0)
+
+    brief = build_clip_brief(candidate=candidate, scored=window)
+
+    assert brief.visual_summary is not None
+    assert brief.visual_summary.face_presence_ratio == pytest.approx(0.75)
+    assert brief.visual_summary.shot_change_count == 3
+    assert "strong motion" in brief.visual_summary.description
+
+
 def test_build_clip_brief_derives_hash_from_rubric_version_and_window() -> None:
     segments = (_segment(text="identical transcript"),)
     window = _scored_window(segments)

@@ -110,6 +110,37 @@ def test_build_transcript_excerpt_truncates_long_transcripts_with_marker() -> No
     assert len(excerpt) <= MAX_TRANSCRIPT_CHARS + 500  # marker has small overhead
 
 
+def test_build_transcript_excerpt_samples_middle_timeline_when_truncated() -> None:
+    segments = []
+    for index in range(12):
+        token = f"MIDDLE TOKEN {index}" if index in {4, 6, 8} else f"segment {index}"
+        text = f"{token} " + ("x " * 600)
+        if index == 11:
+            text = ("x " * 600) + "TAIL TOKEN"
+        segments.append(
+            (
+                "host",
+                text,
+                float(index * 10),
+                float(index * 10 + 8),
+            )
+        )
+    timeline = _timeline_with_text(segments)
+
+    excerpt, truncated = build_transcript_excerpt(
+        timeline,
+        max_chars=1_600,
+        head_chars=400,
+        tail_chars=400,
+    )
+
+    assert truncated is True
+    assert "representative middle excerpts" in excerpt
+    assert "MIDDLE TOKEN" in excerpt
+    assert "segment 0" in excerpt
+    assert "TAIL TOKEN" in excerpt
+
+
 # ---------- brief request building ----------
 
 

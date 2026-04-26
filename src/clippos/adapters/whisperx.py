@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -85,12 +86,19 @@ def transcribe(video_path: Path, *, config: TranscriptionConfig | None = None) -
 
     import whisperx
 
+    _status(f"WhisperX: loading audio from {video_path}.")
     audio = whisperx.load_audio(str(video_path))
 
+    _status(
+        f"WhisperX: loading model {cfg.model} on {device} "
+        f"({compute_type}, batch_size={cfg.batch_size})."
+    )
     asr = whisperx.load_model(cfg.model, device=device, compute_type=compute_type)
+    _status("WhisperX: transcribing audio.")
     result = asr.transcribe(audio, batch_size=cfg.batch_size)
     language = result["language"]
 
+    _status(f"WhisperX: aligning word timestamps for language {language}.")
     aligner, metadata = whisperx.load_align_model(language_code=language, device=device)
     aligned = whisperx.align(
         result["segments"],
@@ -101,6 +109,7 @@ def transcribe(video_path: Path, *, config: TranscriptionConfig | None = None) -
         return_char_alignments=False,
     )
 
+    _status(f"WhisperX: diarizing speakers with {diarizer_choice}.")
     merged = _apply_diarization(
         aligned=aligned,
         audio=audio,
@@ -108,7 +117,12 @@ def transcribe(video_path: Path, *, config: TranscriptionConfig | None = None) -
         diarizer_choice=diarizer_choice,
         whisperx_module=whisperx,
     )
+    _status("WhisperX: normalizing transcript output.")
     return normalize_result(merged, model=cfg.model, language=language)
+
+
+def _status(message: str) -> None:
+    print(f"[clippos] {message}", file=sys.stderr, flush=True)
 
 
 def _apply_diarization(

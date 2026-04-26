@@ -471,6 +471,11 @@ def _scoring_handoff(workspace: Path, *, history_path: Path) -> dict[str, Any]:
             "Read the request file, follow its embedded `rubric_prompt` and "
             "`response_schema`, score every clip preserving `clip_id` and "
             "`clip_hash`, then write the response file and rerun `advance`. "
+            "Use each clip's `visual_summary` alongside transcript and "
+            "`mining_signals`; it exists so visual action/reaction shots are "
+            "not lost in text-only scoring. "
+            "If the `video_brief` and the mined clips disagree, trust the clip "
+            "evidence and note the mismatch in per-clip `reasons`. "
             "Treat any `creator_patterns` and `harness_memory` cues in this "
             "payload as contextual lens — the rubric stays authoritative."
         ),
@@ -502,6 +507,11 @@ def _packaging_handoff(workspace: Path, *, history_path: Path) -> dict[str, Any]
 def _done_renders_payload(workspace: Path) -> dict[str, Any]:
     clips = _collect_clip_outputs(workspace)
     clips_dir = workspace / "renders"
+    package_command = f"advance --workspace {workspace} --package"
+    feedback_command = (
+        f"hermes_clippos.py feedback {workspace} "
+        "--kept <ids> --skipped <ids>"
+    )
     return {
         "next_action": "done-renders",
         "workspace": str(workspace),
@@ -520,13 +530,26 @@ def _done_renders_payload(workspace: Path) -> dict[str, Any]:
                 "(caption style, length, banned phrases) to harness memory."
             ),
             "clip_ids": [clip.get("clip_id") for clip in clips if clip.get("clip_id")],
+            "command_template": feedback_command,
+        },
+        "next_steps": {
+            "package": {
+                "recommended": True,
+                "command": package_command,
+                "description": "Generate titles, descriptions, hashtags, hooks, and thumbnail notes for the rendered clips.",
+            },
+            "feedback": {
+                "recommended": True,
+                "command_template": feedback_command,
+                "description": "Record keep/skip outcomes so future `/clippos` runs match the user's taste better.",
+            },
         },
         "instructions": (
             f"Share the rendered clip paths with the user and mention that "
-            f"all clips live in {clips_dir}. Run `advance --package` on this "
-            "workspace to generate publish packs. Ask the user which clips "
-            "they actually posted and record the answer via the `feedback` "
-            "subcommand."
+            f"all clips live in {clips_dir}. Recommend the package step with "
+            f"`{package_command}` so the user gets titles, captions, hashtags, "
+            "and hooks. Ask which clips they actually posted and record the "
+            "answer via the `feedback` subcommand."
         ),
     }
 

@@ -36,6 +36,10 @@ def test_bootstrap_resumes_incomplete_venv_installs() -> None:
     skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 
     assert ".clippos-bootstrap-complete" in bootstrap
+    assert ".clippos-dependency-fingerprint" in bootstrap
+    assert "pyproject.toml" in bootstrap
+    assert "uv.lock" in bootstrap
+    assert "Dependency files changed since bootstrap" in bootstrap
     assert "date -u" in bootstrap
     assert "Resuming setup in existing .venv" in bootstrap
     assert "[ -d \"$CLIPPOS_ROOT/.venv\" ] ||" not in skill
@@ -76,6 +80,19 @@ def test_readme_documents_native_install_per_harness() -> None:
     assert "$HERMES_HOME/skills/clippos" in readme
     assert "bootstrap-venv.sh" in readme
     assert "HERMES_SETUP.md" in readme
+    assert "/plugin update clippos@Clippos" in readme
+    assert "git pull --ff-only" in readme
+    assert "clippos@Clippos" in readme
+
+
+def test_hermes_setup_documents_safe_update_flow() -> None:
+    hermes_setup = (ROOT / "HERMES_SETUP.md").read_text(encoding="utf-8")
+
+    assert "git remote set-url origin https://github.com/dylan-buck/Clippos" in hermes_setup
+    assert "git pull --ff-only" in hermes_setup
+    assert "bash scripts/bootstrap-venv.sh" in hermes_setup
+    assert ".venv/bin/python -m clippos.cli version" in hermes_setup
+    assert "Config, model weights, and rendered clips are left alone" in hermes_setup
 
 
 def test_claude_marketplace_json_exposes_clip_plugin() -> None:

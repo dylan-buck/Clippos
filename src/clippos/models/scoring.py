@@ -73,6 +73,25 @@ class MiningSignals(ContractModel):
     spike_categories: list[str]
 
 
+class ClipVisualSummary(ContractModel):
+    """Compact per-clip vision context for harness scoring.
+
+    The full vision timeline can be large, so scoring requests carry a
+    small digest that tells the model what kind of visual energy the clip has
+    without asking it to inspect megabytes of frame data.
+    """
+
+    frame_count: Annotated[int, Field(ge=0)]
+    face_presence_ratio: Annotated[float, Field(ge=0, le=1)]
+    avg_motion: Annotated[float, Field(ge=0, le=1)]
+    peak_motion: Annotated[float, Field(ge=0, le=1)]
+    shot_change_count: Annotated[int, Field(ge=0)]
+    shot_change_rate_per_minute: Annotated[float, Field(ge=0)]
+    avg_face_center_x: Annotated[float, Field(ge=0, le=1)] | None = None
+    avg_face_center_y: Annotated[float, Field(ge=0, le=1)] | None = None
+    description: Annotated[str, Field(min_length=1)]
+
+
 class ClipBrief(ContractModel):
     clip_id: str
     clip_hash: str
@@ -83,6 +102,7 @@ class ClipBrief(ContractModel):
     speakers: list[str]
     mining_score: Annotated[float, Field(ge=0, le=1)]
     mining_signals: MiningSignals
+    visual_summary: ClipVisualSummary | None = None
 
     @model_validator(mode="after")
     def validate_time_bounds(self) -> "ClipBrief":

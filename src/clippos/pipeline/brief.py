@@ -13,9 +13,9 @@ Wire shape mirrors the scoring handoff:
                          reruns when the harness has not yet authored
                          the response on this turn)
 
-Long transcripts are truncated to ~30k chars before being embedded in
-the request — the brief only needs the global shape, not every word, and
-keeping requests small bounds the model token cost.
+Long transcripts are sampled to ~30k chars before being embedded in the
+request — the brief needs representative moments across the full timeline,
+not every word, and keeping requests small bounds the model token cost.
 """
 from __future__ import annotations
 
@@ -48,11 +48,12 @@ BRIEF_CACHE_FILENAME = "brief-cache.json"
 # even on smaller-context harness models.
 MAX_TRANSCRIPT_CHARS = 30_000
 
-# How many characters to keep from the head and tail when truncating.
-# Heads matter (intros set theme); tails matter (cold-open / wrap-up
-# moments often anchor the spine). Middle is sampled lightly.
+# How many characters to keep from the head and tail when truncating. The
+# remaining budget is spent on deterministic middle samples spread across the
+# timeline so the brief author does not overfit to the intro/outro.
 TRUNCATION_HEAD_CHARS = 18_000
 TRUNCATION_TAIL_CHARS = 10_000
+MIDDLE_SAMPLE_COUNT = 5
 
 
 class BriefResponseError(RuntimeError):
@@ -78,12 +79,12 @@ def build_transcript_excerpt(
     head_chars: int = TRUNCATION_HEAD_CHARS,
     tail_chars: int = TRUNCATION_TAIL_CHARS,
 ) -> tuple[str, bool]:
-    """Render the transcript as a single string capped at max_chars.
+    """Render the transcript as a single representative string.
 
-    Returns ``(excerpt, truncated)``. Truncation preserves the head and
-    tail since both anchor a video's thesis (the lede + the wrap-up are
-    where editors typically find spine content). Middle is dropped with
-    a clear marker so the model knows context is missing.
+    Returns ``(excerpt, truncated)``. When truncating, keep the beginning and
+    ending while also sampling deterministic middle segments across the full
+    timeline. This avoids a brief that captures the intro theme but misses a
+    different recurring format later in the video.
     """
     parts: list[str] = []
     for segment in timeline.segments:
@@ -95,11 +96,42 @@ def build_transcript_excerpt(
 
     head = full[:head_chars].rstrip()
     tail = full[-tail_chars:].lstrip() if tail_chars > 0 else ""
+    middle_budget = max(max_chars - head_chars - tail_chars, 0)
+    middle = _sample_middle_transcript(parts, budget=middle_budget)
     marker = (
-        f"\n\n[transcript truncated for brief — kept first {head_chars} "
-        f"chars and last {tail_chars} chars; middle dropped]\n\n"
+        f"\n\n[transcript truncated for brief — kept first {head_chars} chars, "
+        f"{MIDDLE_SAMPLE_COUNT} representative middle sample(s), and last "
+        f"{tail_chars} chars]\n\n"
     )
-    return head + marker + tail, True
+    ending_marker = "\n\n[ending excerpt]\n\n" if tail else ""
+    if middle:
+        middle = f"[representative middle excerpts]\n{middle}\n"
+    return head + marker + middle + ending_marker + tail, True
+
+
+def _sample_middle_transcript(parts: list[str], *, budget: int) -> str:
+    if budget <= 0 or len(parts) < 3:
+        return ""
+
+    sample_indices: list[int] = []
+    last_index = len(parts) - 1
+    for offset in range(1, MIDDLE_SAMPLE_COUNT + 1):
+        index = round(last_index * offset / (MIDDLE_SAMPLE_COUNT + 1))
+        if index <= 0 or index >= last_index or index in sample_indices:
+            continue
+        sample_indices.append(index)
+    if not sample_indices:
+        return ""
+
+    per_sample_budget = max(budget // len(sample_indices), 1)
+    samples: list[str] = []
+    for index in sample_indices:
+        line = parts[index]
+        if len(line) > per_sample_budget:
+            line = line[: max(per_sample_budget - 1, 1)].rstrip() + "…"
+        samples.append(line)
+    combined = "\n".join(samples)
+    return combined[:budget].rstrip()
 
 
 def build_brief_request(

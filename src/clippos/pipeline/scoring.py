@@ -16,6 +16,7 @@ from clippos.models.candidate import CandidateClip
 from clippos.models.scoring import (
     ClipBrief,
     ClipScore,
+    ClipVisualSummary,
     MiningSignals,
     ScoringRequest,
     ScoringResponse,
@@ -116,6 +117,11 @@ def build_clip_brief(
         reasons=list(candidate.reasons),
         spike_categories=list(candidate.spike_categories),
     )
+    visual_summary = (
+        ClipVisualSummary.model_validate(scored.visual_summary)
+        if scored.visual_summary is not None
+        else None
+    )
     return ClipBrief(
         clip_id=candidate.clip_id,
         clip_hash=clip_hash,
@@ -126,6 +132,7 @@ def build_clip_brief(
         speakers=speakers,
         mining_score=candidate.score,
         mining_signals=mining_signals,
+        visual_summary=visual_summary,
     )
 
 

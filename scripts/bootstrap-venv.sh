@@ -24,6 +24,7 @@ CLIPPOS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="$CLIPPOS_ROOT/.venv"
 VENV_PY="$VENV_DIR/bin/python"
 BOOTSTRAP_MARKER="$VENV_DIR/.clippos-bootstrap-complete"
+DEPENDENCY_FINGERPRINT="$VENV_DIR/.clippos-dependency-fingerprint"
 
 python_in_supported_range() {
   # The pyproject pin is >=3.12,<3.13 because TensorFlow wheels (pulled
@@ -62,10 +63,34 @@ find_python() {
   exit 1
 }
 
+dependency_fingerprint() {
+  "$1" - "$CLIPPOS_ROOT" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+hasher = hashlib.sha256()
+for relative in ("pyproject.toml", "uv.lock"):
+    path = root / relative
+    hasher.update(relative.encode())
+    hasher.update(b"\0")
+    if path.exists():
+        hasher.update(path.read_bytes())
+    hasher.update(b"\0")
+print(hasher.hexdigest())
+PY
+}
+
 if [ -f "$BOOTSTRAP_MARKER" ] \
   && [ -x "$VENV_PY" ] \
   && python_in_supported_range "$VENV_PY"; then
-  exit 0
+  CURRENT_FINGERPRINT="$(dependency_fingerprint "$VENV_PY")"
+  INSTALLED_FINGERPRINT="$(cat "$DEPENDENCY_FINGERPRINT" 2>/dev/null || true)"
+  if [ "$CURRENT_FINGERPRINT" = "$INSTALLED_FINGERPRINT" ]; then
+    exit 0
+  fi
+  printf '[clippos] Dependency files changed since bootstrap; refreshing .venv.\n' >&2
 fi
 
 if [ -d "$VENV_DIR" ] \
@@ -94,6 +119,7 @@ printf '[clippos] Subsequent /clippos calls reuse the completed .venv.\n' >&2
   config-write --root "$CLIPPOS_ROOT"
 
 date -u +"%Y-%m-%dT%H:%M:%SZ" > "$BOOTSTRAP_MARKER"
+dependency_fingerprint "$VENV_PY" > "$DEPENDENCY_FINGERPRINT"
 
 printf '[clippos] Setup complete. Engine extras installed.\n' >&2
 printf '[clippos] First /clippos will additionally download ~3.5 GB of model weights\n' >&2

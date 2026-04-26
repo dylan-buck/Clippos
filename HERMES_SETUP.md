@@ -51,8 +51,9 @@ Both Claude Code (`/plugin marketplace add`) and Codex
 (`codex marketplace add`) have native plugin install flows that clone
 the repo into their own plugin caches and surface `/clippos:clippos` (Claude)
 or the equivalent slash command. Their `/clippos` shims run
-`bootstrap-venv.sh`; it exits quickly after a completed install and resumes
-an incomplete `.venv` if a prior pip install failed.
+`bootstrap-venv.sh`; it exits quickly after a completed install, resumes
+an incomplete `.venv` if a prior pip install failed, and refreshes the
+environment when `pyproject.toml` or `uv.lock` changes.
 
 Hermes does not have a marketplace yet, but its self-contained
 workspace at `~/.hermes/` is the natural install location. The checkout
@@ -83,13 +84,26 @@ for scaling.
 
 ## Updating
 
+Hermes installs are normal git checkouts, so updates track the repo:
+
 ```bash
 cd ~/.hermes/skills/clippos
-git pull
-.venv/bin/pip install -e '.[engine]'   # picks up any pin changes
+git remote set-url origin https://github.com/dylan-buck/Clippos  # one-time for pre-rename installs
+git pull --ff-only
+bash scripts/bootstrap-venv.sh
+.venv/bin/python -m clippos.cli version
 ```
 
-If `bootstrap-venv.sh` ever needs to re-run from scratch:
+`bootstrap-venv.sh` is safe to run after every pull. It no-ops when the
+completed `.venv` already matches the current dependency files, and
+re-runs `pip install -e '.[engine]'` when dependency pins changed.
+Config, model weights, and rendered clips are left alone.
+
+For release maintainers: bump `src/clippos/__init__.py`,
+`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and
+`.codex-plugin/plugin.json` together before tagging.
+
+If bootstrap ever needs to re-run from scratch:
 
 ```bash
 rm -rf ~/.hermes/skills/clippos/.venv

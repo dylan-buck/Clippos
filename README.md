@@ -173,6 +173,39 @@ The script prints structured JSON with a `next_action`: `brief`,
 response file when prompted, then calls `advance --workspace
 "$WORKSPACE"` again to continue.
 
+### Updating
+
+Hermes and generic installs are normal git checkouts. To pick up the
+latest `main` plus any dependency changes:
+
+```bash
+cd ~/.hermes/skills/clippos
+git remote set-url origin https://github.com/dylan-buck/Clippos  # one-time for pre-rename installs
+git pull --ff-only
+bash scripts/bootstrap-venv.sh
+.venv/bin/python -m clippos.cli version
+```
+
+`bootstrap-venv.sh` no-ops when the completed `.venv` already matches
+the current `pyproject.toml` and `uv.lock`, and refreshes the editable
+engine install when those files change. It does not delete
+`~/.config/clippos`, `~/.cache/clippos`, or rendered clips.
+
+Claude Code users should let Claude own its plugin cache:
+
+```text
+/plugin marketplace update Clippos
+/plugin update clippos@Clippos
+```
+
+Restart Claude Code after the update. Codex users should update or
+reinstall `clippos@Clippos` from `/plugins` / the Codex marketplace UI
+instead of editing `~/.codex/plugins/cache` by hand.
+
+Release maintainers should bump all user-visible versions together:
+`src/clippos/__init__.py`, `.claude-plugin/plugin.json`,
+`.claude-plugin/marketplace.json`, and `.codex-plugin/plugin.json`.
+
 ## Hardware requirements
 
 The pipeline runs Whisper large-v3 transcription, RetinaFace face

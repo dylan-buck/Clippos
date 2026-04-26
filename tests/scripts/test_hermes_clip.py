@@ -632,6 +632,11 @@ def test_advance_emits_done_renders_when_render_report_exists(tmp_path: Path) ->
     assert render_path.endswith("renders/c1/clip-9x16.mp4")
     assert payload["feedback_prompt"]["clip_ids"] == ["c1"]
     assert "feedback" in payload["feedback_prompt"]["instructions"]
+    assert payload["feedback_prompt"]["command_template"].endswith(
+        "--kept <ids> --skipped <ids>"
+    )
+    assert payload["next_steps"]["package"]["recommended"] is True
+    assert "--package" in payload["next_steps"]["package"]["command"]
     assert str(workspace.resolve() / "renders") in payload["instructions"]
 
 

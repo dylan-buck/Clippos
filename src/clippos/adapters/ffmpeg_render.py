@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -85,6 +86,7 @@ def render_clip(
     caption_style = resolve_caption_style(manifest.caption_preset)
     results: list[RenderResult] = []
     for ratio, output_path in manifest.outputs.items():
+        _status(f"FFmpeg: rendering {manifest.clip_id} as {ratio} -> {output_path}.")
         crop_plan = manifest.crop_plans[ratio]
         output_path.parent.mkdir(parents=True, exist_ok=True)
         subtitle_root = subtitle_dir or output_path.parent
@@ -108,7 +110,12 @@ def render_clip(
                 ratio=ratio, video_path=output_path, subtitle_path=subtitle_path
             )
         )
+        _status(f"FFmpeg: finished {manifest.clip_id} {ratio}.")
     return results
+
+
+def _status(message: str) -> None:
+    print(f"[clippos] {message}", file=sys.stderr, flush=True)
 
 
 def _ffmpeg_available(ffmpeg_binary: str) -> bool:
