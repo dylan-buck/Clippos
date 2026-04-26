@@ -2,8 +2,8 @@
 # scripts/bootstrap-venv.sh
 #
 # Idempotent first-run setup: create a .venv at the Clippos install root
-# and pip-install the engine extras. Called automatically by the SKILL
-# prologue on the first /clippos invocation when no .venv exists.
+# and pip-install the engine extras. Called by the SKILL prologue; it exits
+# quickly after a completed install.
 #
 # Why this is needed: native plugin managers (Claude Code's
 # `/plugin marketplace add`, Codex's equivalent) clone the repo but do
@@ -21,12 +21,9 @@
 set -euo pipefail
 
 CLIPPOS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# Idempotent: skip if already bootstrapped. Cheap to call from the
-# SKILL prologue on every invocation.
-if [ -d "$CLIPPOS_ROOT/.venv" ]; then
-  exit 0
-fi
+VENV_DIR="$CLIPPOS_ROOT/.venv"
+VENV_PY="$VENV_DIR/bin/python"
+BOOTSTRAP_MARKER="$VENV_DIR/.clippos-bootstrap-complete"
 
 python_in_supported_range() {
   # The pyproject pin is >=3.12,<3.13 because TensorFlow wheels (pulled
@@ -65,21 +62,38 @@ find_python() {
   exit 1
 }
 
-PY="$(find_python)"
+if [ -f "$BOOTSTRAP_MARKER" ] \
+  && [ -x "$VENV_PY" ] \
+  && python_in_supported_range "$VENV_PY"; then
+  exit 0
+fi
 
-printf '[clippos] First-run setup: creating .venv at %s\n' "$CLIPPOS_ROOT/.venv" >&2
-printf '[clippos] This downloads ~700 MB of pip wheels and takes 3-7 min.\n' >&2
-printf '[clippos] Subsequent /clippos calls reuse the cached .venv.\n' >&2
+if [ -d "$VENV_DIR" ] \
+  && { [ ! -x "$VENV_PY" ] || ! python_in_supported_range "$VENV_PY"; }; then
+  printf '[clippos] Existing .venv is incomplete or not Python 3.12; recreating it.\n' >&2
+  rm -rf "$VENV_DIR"
+fi
 
-"$PY" -m venv "$CLIPPOS_ROOT/.venv"
-"$CLIPPOS_ROOT/.venv/bin/python" -m pip install --upgrade --quiet pip setuptools wheel
-"$CLIPPOS_ROOT/.venv/bin/python" -m pip install -e "$CLIPPOS_ROOT[engine]"
+if [ ! -d "$VENV_DIR" ]; then
+  PY="$(find_python)"
+  printf '[clippos] First-run setup: creating .venv at %s\n' "$VENV_DIR" >&2
+  "$PY" -m venv "$VENV_DIR"
+else
+  printf '[clippos] Resuming setup in existing .venv at %s\n' "$VENV_DIR" >&2
+fi
+printf '[clippos] This downloads ~700 MB of pip wheels and takes 3-7 min if needed.\n' >&2
+printf '[clippos] Subsequent /clippos calls reuse the completed .venv.\n' >&2
+
+"$VENV_PY" -m pip install --upgrade --quiet pip setuptools wheel
+"$VENV_PY" -m pip install -e "$CLIPPOS_ROOT[engine]"
 
 # Persist CLIPPOS_ROOT so the SKILL prologue can resolve it across
 # harnesses without relying on env-var substitution that some harnesses
 # (Claude Code, Anthropic issue #9354) don't always perform.
-"$CLIPPOS_ROOT/.venv/bin/python" "$CLIPPOS_ROOT/scripts/clippos_skill.py" \
+"$VENV_PY" "$CLIPPOS_ROOT/scripts/clippos_skill.py" \
   config-write --root "$CLIPPOS_ROOT"
+
+date -u +"%Y-%m-%dT%H:%M:%SZ" > "$BOOTSTRAP_MARKER"
 
 printf '[clippos] Setup complete. Engine extras installed.\n' >&2
 printf '[clippos] First /clippos will additionally download ~3.5 GB of model weights\n' >&2

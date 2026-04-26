@@ -21,6 +21,27 @@ def test_skill_surface_files_exist() -> None:
     assert bootstrap.stat().st_mode & 0o111, "bootstrap-venv.sh must be executable"
 
 
+def test_env_example_uses_clippos_config_names() -> None:
+    env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
+
+    assert "CLIPPOS_OUTPUT_DIR=~/Documents/Clippos" in env_example
+    assert "CLIPPOS_RATIOS=9:16,1:1,16:9" in env_example
+    assert "CLIPPOS_APPROVE_TOP=5" in env_example
+    assert "CLIPPER_" not in env_example
+    assert "ClipperTool" not in env_example
+
+
+def test_bootstrap_resumes_incomplete_venv_installs() -> None:
+    bootstrap = (ROOT / "scripts" / "bootstrap-venv.sh").read_text(encoding="utf-8")
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+    assert ".clippos-bootstrap-complete" in bootstrap
+    assert "date -u" in bootstrap
+    assert "Resuming setup in existing .venv" in bootstrap
+    assert "[ -d \"$CLIPPOS_ROOT/.venv\" ] ||" not in skill
+    assert 'bash "$CLIPPOS_ROOT/scripts/bootstrap-venv.sh"' in skill
+
+
 def test_clip_command_invokes_clip_skill() -> None:
     command = (ROOT / "commands" / "clippos.md").read_text(encoding="utf-8")
 
@@ -99,6 +120,8 @@ def test_skill_is_hermes_first_with_claude_codex_fallback() -> None:
     assert "/clippos-config" in skill
     assert "/clippos-package" in skill
     assert skill.index("${HERMES_SKILL_DIR}") < skill.index("CLAUDE_PLUGIN_ROOT")
+    assert 'find "$cache_root" -mindepth 2 -maxdepth 5 -type f' in skill
+    assert 'sort -nr' in skill
 
 
 def test_skill_routes_hermes_flow_through_hermes_clip_helper() -> None:

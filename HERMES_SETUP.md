@@ -48,15 +48,17 @@ with the install path.
 Both Claude Code (`/plugin marketplace add`) and Codex
 (`codex marketplace add`) have native plugin install flows that clone
 the repo into their own plugin caches and surface `/clippos:clippos` (Claude)
-or the equivalent slash command. The first `/clippos` invocation
-auto-runs `bootstrap-venv.sh` if the `.venv` is missing.
+or the equivalent slash command. Their `/clippos` shims run
+`bootstrap-venv.sh`; it exits quickly after a completed install and resumes
+an incomplete `.venv` if a prior pip install failed.
 
 Hermes does not have a marketplace yet, but its self-contained
-workspace at `~/.hermes/` is the natural install location — no global
-config dirs, no `~/.local/share/`, no symlinks. Everything Clippos
-writes (config, model cache, rendered MP4s) defaults to paths that
-respect the user's chosen output directory; the install itself lives
-fully under `~/.hermes/skills/clippos/`.
+workspace at `~/.hermes/` is the natural install location. The checkout
+and Python environment live under `~/.hermes/skills/clippos/`; user-level
+state follows the same cross-harness defaults as Claude Code and Codex:
+config in `~/.config/clippos/`, model cache in `~/.cache/clippos/`, and
+rendered MP4s under the configured output directory
+(`~/Documents/Clippos` by default).
 
 ## First /clippos run
 

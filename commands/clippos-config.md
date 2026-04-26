@@ -9,14 +9,14 @@ $ARGUMENTS
 
 Resolve `CLIPPOS_ROOT` with the prologue documented in `SKILL.md` (env
 var > `HERMES_SKILL_DIR` > `CLAUDE_PLUGIN_ROOT` > `~/.hermes/skills/clippos`
-> `~/.claude/skills/clippos` > `~/.codex/skills/clippos` > newest match in
-`~/.claude/plugins/cache/<marketplace>/clippos/<sha>` /
-`~/.codex/plugins/cache/<marketplace>/clippos/<sha>` > `CLIPPOS_ROOT`
-line in `~/.config/clippos/.env` > `$PWD`). Each candidate must contain
-`scripts/hermes_clippos.py`. If `$CLIPPOS_ROOT/.venv` does not exist, run
-`bash $CLIPPOS_ROOT/scripts/bootstrap-venv.sh` once to create it. Then
-resolve `CLIPPOS_PYTHON` to `$CLIPPOS_ROOT/.venv/bin/python` when
-executable, otherwise `python3`.
+> `~/.claude/skills/clippos` > `~/.codex/skills/clippos` > newest plugin-cache
+checkout containing `scripts/hermes_clippos.py` > `CLIPPOS_ROOT` line in
+`~/.config/clippos/.env` > `$PWD`). Each candidate must contain
+`scripts/hermes_clippos.py`. Run
+`bash $CLIPPOS_ROOT/scripts/bootstrap-venv.sh`; it is idempotent after a
+completed install and resumes incomplete `.venv` installs. Then resolve
+`CLIPPOS_PYTHON` to `$CLIPPOS_ROOT/.venv/bin/python` when executable,
+otherwise `python3`.
 
 Run `"$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clippos_skill.py" config-check`
 first. The payload's top-level `ready` field reflects bins, render path, and

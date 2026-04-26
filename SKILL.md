@@ -143,13 +143,25 @@ for candidate in "${CLIPPOS_ROOT:-}" "${HERMES_SKILL_DIR:-}" "${CLAUDE_PLUGIN_RO
     CLIPPOS_ROOT="$candidate"; break
   fi
 done
-# Claude Code + Codex marketplace installs land under a versioned cache
-# (~/.claude/plugins/cache/<marketplace>/clippos/<sha>, ~/.codex/plugins/
-# cache/<marketplace>/clippos/<sha>); pick the newest one if no env var hit.
+# Claude Code + Codex marketplace installs land under versioned caches whose
+# exact shape can vary by harness. Search for the helper script and pick the
+# newest matching checkout if no env var hit.
 if [ -z "${CLIPPOS_ROOT:-}" ]; then
   for cache_root in "$HOME/.claude/plugins/cache" "$HOME/.codex/plugins/cache"; do
     [ -d "$cache_root" ] || continue
-    candidate="$(find "$cache_root" -mindepth 3 -maxdepth 3 -type d -name "clippos" -path "*/clippos" 2>/dev/null | head -1)"
+    candidate="$(
+      find "$cache_root" -mindepth 2 -maxdepth 5 -type f \
+        -path "*/scripts/hermes_clippos.py" -print 2>/dev/null \
+      | while IFS= read -r script_path; do
+          root="${script_path%/scripts/hermes_clippos.py}"
+          [ -f "$root/SKILL.md" ] || continue
+          mtime="$(stat -f "%m" "$root" 2>/dev/null || stat -c "%Y" "$root" 2>/dev/null || printf 0)"
+          printf '%s\t%s\n' "$mtime" "$root"
+        done \
+      | sort -nr \
+      | head -1 \
+      | cut -f2-
+    )"
     [ -n "$candidate" ] && [ -f "$candidate/scripts/hermes_clippos.py" ] && \
       { CLIPPOS_ROOT="$candidate"; break; }
   done
@@ -163,10 +175,9 @@ fi
 # `codex marketplace add`) clone the repo but do not run pip — there is
 # no PostInstall hook for engine extras. The bootstrap script creates a
 # .venv at the install root and pip-installs the engine extras (~5 min,
-# ~700 MB of wheels). Idempotent — no-op once the .venv exists. Hermes
-# users run this script directly post-clone, so they don't pay this
-# cost on first /clippos.
-[ -d "$CLIPPOS_ROOT/.venv" ] || bash "$CLIPPOS_ROOT/scripts/bootstrap-venv.sh"
+# ~700 MB of wheels). Idempotent — no-op once a completed install marker
+# exists, but resumes if a prior pip install failed after creating .venv.
+bash "$CLIPPOS_ROOT/scripts/bootstrap-venv.sh"
 CLIPPOS_PYTHON="${CLIPPOS_PYTHON:-$CLIPPOS_ROOT/.venv/bin/python}"
 [ -x "$CLIPPOS_PYTHON" ] || CLIPPOS_PYTHON="$(command -v python3)"
 "$CLIPPOS_PYTHON" "$CLIPPOS_ROOT/scripts/clippos_skill.py" config-check
