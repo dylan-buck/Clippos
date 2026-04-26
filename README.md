@@ -10,20 +10,20 @@
 
 # Clippos
 
-Turn any long-form video — local file, YouTube link, Discord/Telegram
-attachment URL, or any URL [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-supports — into captioned, viral-ready social clips with a single
-`/clippos` call in your agent. Ships as a skill for
+Generate captioned, viral-ready social clips from any long-form video with a
+single `/clippos` call in your agent. Feed it a local file, YouTube link,
+Discord/Telegram attachment URL, or anything
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) supports. Ships as a skill for
 [Hermes](https://hermes-agent.nousresearch.com), Claude Code, and Codex — and
 runs in any harness that can execute a Python script and read JSON.
 
 The engine does the hard media work locally (transcription, diarization, face
-detection, optical-flow motion scoring, virtual-camera cropping, ASS caption
-burn-in, multi-ratio render). The active agent's model handles the
-*judgement* work (which clips are worth posting, titles, captions, hashtags)
-via a JSON handoff — so the clipper never locks you into a specific
-provider, inherits your agent's memory + preferences, and learns from your
-keep/skip decisions over time.
+detection, optical-flow motion scoring with per-clip visual summaries,
+virtual-camera cropping, ASS caption burn-in, multi-ratio render). The active
+agent's model handles the *judgement* work (which clips are worth posting,
+titles, captions, hashtags) via a JSON handoff — so the clipper never locks
+you into a specific provider, inherits your agent's memory + preferences, and
+learns from your keep/skip decisions over time.
 
 Designed Hermes-first. Works anywhere.
 
@@ -151,7 +151,10 @@ identical to Claude Code (without the `clippos:` namespace prefix).
 
 If you're running a harness without a plugin marketplace (custom agent
 framework, bare terminal, a provider SDK), clone manually and run the
-same bootstrap script:
+same bootstrap script. **Heads up:** bootstrap takes ~5 min and downloads
+~700 MB of pip wheels; the first `/clippos` run downloads an additional
+~3.5 GB of model weights. Confirm you meet [Hardware
+requirements](#hardware-requirements) before proceeding.
 
 ```bash
 git clone https://github.com/dylan-buck/Clippos
@@ -447,6 +450,11 @@ for every rendered clip.
 
 ## How it works
 
+Long-running stages stream `[clippos] ...` progress lines to stderr
+(transcription, vision, mining, render, orchestrator) so you can tell at
+a glance whether the pipeline is hung or working. Expect terminal noise
+during the first run while models download.
+
 The pipeline is a state machine. Each stage writes a JSON artifact in
 the workspace; deterministic stages run automatically, model-handoff
 stages pause for a response file:
@@ -540,8 +548,10 @@ Minimal job file:
 ### Stages
 
 - `mine` — ingest + transcribe + vision + mining, then writes
-  `scoring-request.json` (and `brief-request.json` if `video_brief` is
-  enabled in the job's `output_profile`).
+  `scoring-request.json` with per-clip visual summaries (face presence
+  ratio, motion, shot-change rate) attached to each candidate brief
+  (and `brief-request.json` if `video_brief` is enabled in the job's
+  `output_profile`).
 - `brief` — re-writes `scoring-request.json` with the resolved video
   brief embedded. Requires `brief-response.json` (or a cached brief).
 - `review` — consumes an existing `scoring-request.json` plus a matching
@@ -579,7 +589,6 @@ for the full rubric, schema, and caching rules.
   and `uv sync`) but the engine extras + `bootstrap-venv.sh` have not
   been cold-installed on Linux x86_64 or Windows. Both should work —
   TF and torch wheels exist for both — but verification is pending.
-  See [docs/pre-ship-fixes.md](docs/pre-ship-fixes.md).
 - **NVIDIA / CUDA wheels require manual install on Linux.**
   `bootstrap-venv.sh` pulls the CPU `torch==2.8.0` wheel by default.
   Linux users with NVIDIA GPUs need to install the CUDA-suffixed wheel

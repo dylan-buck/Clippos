@@ -9,7 +9,12 @@ build/
 *.egg-info/
 .superpowers/
 artifacts/
-docs/
+# Internal PRD / planning / fix-tracking notes — not user-facing.
+# docs/architecture/ stays tracked (public interface contracts).
+docs/miner-quality.md
+docs/pre-ship-fixes.md
+docs/v1.1.md
+docs/superpowers/
 .coverage
 .DS_Store
 .env
