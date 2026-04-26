@@ -1,7 +1,21 @@
+<p align="center">
+  <img src="assets/banner.png" alt="Clippos — Find the moments. Cut the rest." />
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  <a href="#hardware-requirements"><img src="https://img.shields.io/badge/Python-3.12-blue.svg" alt="Python 3.12" /></a>
+  <a href="#install"><img src="https://img.shields.io/badge/Hermes-first--class-gold.svg" alt="Hermes first-class" /></a>
+</p>
+
 # Clippos
 
-Turn any long-form video into captioned, viral-ready social clips with a
-single `/clippos` call in your agent. Ships as a skill for
+> **Find the moments. Cut the rest.**
+
+Turn any long-form video — local file, YouTube link, Discord/Telegram
+attachment URL, or any URL [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+supports — into captioned, viral-ready social clips with a single
+`/clippos` call in your agent. Ships as a skill for
 [Hermes](https://hermes-agent.nousresearch.com), Claude Code, and Codex — and
 runs in any harness that can execute a Python script and read JSON.
 
@@ -202,6 +216,34 @@ take 30–45 min total.
 Source videos are auto-capped to 1080p before transcription, so 4K @ 60 fps
 inputs do not blow up memory — only duration scales peak RAM.
 
+## Source formats
+
+`/clippos <source>` accepts:
+
+- **Local file paths** — `.mp4`, `.mov`, `.mkv`, `.webm`, `.m4v`, anything
+  ffmpeg can decode. Drag-and-drop or attached files in chat-native
+  harnesses (Hermes Discord/Telegram, Claude Code) resolve to local paths
+  automatically.
+- **YouTube URLs** — pasted directly as the source argument. Auto-capped
+  at 1080p height to keep the WhisperX transcription stage from OOM-ing
+  on 4K @ 60 fps streams.
+- **Direct HTTPS video URLs** (signed S3, CloudFront, plain mp4 hosts) —
+  downloaded with `urllib`, validated with ffprobe before mining.
+- **Discord CDN attachments** (`cdn.discordapp.com`,
+  `media.discordapp.net`) and **Telegram bot-file URLs**
+  (`api.telegram.org`) — detected and downloaded directly via `urllib`
+  (yt-dlp is skipped for those signed-URL cases since it cannot extract
+  them).
+- **Any other URL [yt-dlp](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
+  supports** — Twitch VODs/clips, Vimeo, X/Twitter, Reddit hosted video,
+  TikTok, Instagram, Facebook, and 1000+ more sites. **Untested** in
+  Clippos beyond YouTube; should work since the download step is just
+  `yt-dlp` with a 1080p height cap, but no platform-specific handling
+  beyond Discord/Telegram. File a bug if your platform breaks.
+
+Local files always work. URL-based sources require `yt-dlp` on PATH (it
+ships in the engine extras for the marketplace install paths).
+
 ## Demo (5-minute flow)
 
 Pick any known-good local video 5–10 minutes long.
@@ -308,7 +350,7 @@ the harness model picks up where it left off across `/clippos` invocations.
 One concrete example. You have a 45-minute podcast recording. In your agent:
 
 ```text
-/clippos ~/Downloads/podcast.mp3.mp4 --ratios 9:16
+/clippos ~/Downloads/podcast.mp4 --ratios 9:16
 ```
 
 The skill:

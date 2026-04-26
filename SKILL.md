@@ -35,14 +35,20 @@ locally; the current agent supplies the semantic scoring step by reading
 Accept:
 
 - A local video path, including a path resolved from an attached video file.
-- A direct `http` / `https` video URL.
-- A platform video URL when `yt-dlp` is installed.
+- A **YouTube URL** pasted directly. Auto-capped at 1080p height before
+  WhisperX transcription (4K @ 60 fps would OOM on most laptops).
+- A direct `http` / `https` video URL (signed S3, CloudFront, plain mp4
+  hosts) — downloaded with `urllib`, validated with ffprobe before mining.
 - A messaging-platform attachment URL (Discord CDN, Telegram `api.telegram.org`
   bot-file URL, WhatsApp/Signal-provided HTTPS URL). On Discord and Telegram,
   when the user drops a video into the channel, the attachment appears in the
   message as `{filename, url, size}` — pass that `url` straight into `advance
   --source`. The helper detects CDN hosts and downloads them directly via
   `urllib` (yt-dlp is skipped for those, since they are signed direct mp4s).
+- Any other URL `yt-dlp` supports (Twitch VODs/clips, Vimeo, X/Twitter,
+  Reddit hosted video, TikTok, Instagram, Facebook, 1000+ more sites) —
+  not platform-specifically tested in Clippos beyond YouTube; should
+  work since the download step is generic `yt-dlp` with a 1080p cap.
 
 Optional user intent:
 
