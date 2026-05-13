@@ -305,6 +305,30 @@ Pick any known-good local video 5–10 minutes long.
    c2='too long'`. The next `/clippos` run will surface patterns in the
    scoring handoff.
 
+## Optional X/Twitter publishing with Hermes Tweet
+
+Clippos stops at rendered MP4s and ready-to-paste publish packs. If your
+Hermes workspace also uses
+[Hermes Tweet](https://github.com/Xquik-dev/hermes-tweet), the same agent can
+turn those packs into an approval-gated X/Twitter publishing and monitoring
+workflow.
+
+Install Hermes Tweet in the Hermes workspace:
+
+```bash
+hermes plugins install Xquik-dev/hermes-tweet --enable
+```
+
+Then run `/clippos package` and ask Hermes to read the rendered MP4 paths plus
+each `renders/<clip_id>/package.json`. Use Hermes Tweet to search Twitter/X for
+related keywords, read tweet replies on prior posts, look up users or creators,
+monitor tweets after publishing, and export followers for audience review.
+
+Keep unattended sessions read-only. Enable `tweet_action` only after a human
+confirms the exact video, account, caption, hashtags, and reply or DM text.
+That keeps clip selection, caption writing, X/Twitter posting, replies, DMs,
+and feedback logging in one Hermes-controlled review loop.
+
 ## Configuration
 
 Skill configuration lives at `~/.config/clippos/.env`. Write it
